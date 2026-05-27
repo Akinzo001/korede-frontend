@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+@theme {
+  --animate-ledger-scroll: ledger-scroll 30s linear infinite;
+
+  @keyframes ledger-scroll {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}

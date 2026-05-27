@@ -1,12 +1,16 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 
 export default function App() {
-  const isLoginPage = window.location.pathname === "/login";
-
   return (
     <div className="min-h-screen overflow-x-hidden bg-white">
-      {isLoginPage ? <LoginPage /> : <LandingPage />}
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+        </Routes>
+      </BrowserRouter>
     </div>
   );
 }

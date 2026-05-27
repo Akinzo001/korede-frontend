@@ -1,4 +1,5 @@
 import { Eye } from "lucide-react";
+import { Link } from "react-router-dom";
 import { BrandLogo } from "../components/BrandLogo";
 
 export function LoginPage() {
@@ -9,9 +10,9 @@ export function LoginPage() {
       <main className="flex flex-1 items-center justify-center px-4 py-12 sm:px-6">
         <section className="w-full max-w-xl">
           <div className="text-center">
-            <a href="/" className="inline-flex justify-center text-5xl sm:text-6xl">
+            <Link to="/" className="inline-flex justify-center text-5xl sm:text-6xl">
               <BrandLogo size="md" />
-            </a>
+            </Link>
             <p className="mt-6 text-xl text-slate-800 sm:text-2xl">
               Welcome back to Korede.
             </p>

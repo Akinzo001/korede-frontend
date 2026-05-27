@@ -35,10 +35,7 @@ export function CampaignCard({ campaign }: CampaignCardProps) {
           <span className="text-slate-600">{campaign.funded}% funded</span>
         </div>
         <div className="mt-3 h-2 rounded-full bg-teal-100">
-          <div
-            className="h-2 rounded-full bg-teal-800"
-            style={{ width: `${campaign.funded}%` }}
-          />
+          <div className={`h-2 rounded-full bg-teal-800 ${campaign.progressClass}`} />
         </div>
 
         <button className="mt-6 w-full rounded-md bg-teal-800 px-5 py-4 text-sm font-bold text-white transition hover:bg-teal-900">

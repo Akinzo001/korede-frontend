@@ -6,6 +6,7 @@ export type Campaign = {
   description: string;
   raised: string;
   funded: number;
+  progressClass: string;
   imageUrl: string;
 };
 
@@ -19,6 +20,7 @@ export const campaigns: Campaign[] = [
       "Amara needs urgent corrective surgery for a congenital heart defect. Funds settle directly with the hospital.",
     raised: "N4,500,000",
     funded: 65,
+    progressClass: "w-[65%]",
     imageUrl:
       "https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=900&q=80",
   },
@@ -31,6 +33,7 @@ export const campaigns: Campaign[] = [
       "Ifeanyi requires immediate chemotherapy treatment. All donations are verified and reconciled to the hospital bill.",
     raised: "N850,000",
     funded: 22,
+    progressClass: "w-[22%]",
     imageUrl:
       "https://images.unsplash.com/photo-1576091160550-2173dba999ef?auto=format&fit=crop&w=900&q=80",
   },
@@ -43,6 +46,7 @@ export const campaigns: Campaign[] = [
       "Post-accident reconstructive surgery for an aspiring athlete with direct verification and treatment updates.",
     raised: "N1,400,000",
     funded: 45,
+    progressClass: "w-[45%]",
     imageUrl:
       "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=900&q=80",
   },

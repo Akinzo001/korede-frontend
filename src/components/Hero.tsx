@@ -17,7 +17,7 @@ export function Hero() {
           <p className="mt-8 max-w-2xl text-base leading-8 text-slate-700 md:text-lg">
             Every medical case on Korede is verified by accredited hospitals,
             settled directly to healthcare providers, and recorded immutably on
-            the Solana blockchain.
+            the Sui blockchain.
           </p>
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row">
@@ -72,7 +72,7 @@ export function Hero() {
 
             <div className="mt-6 flex items-center gap-3 rounded-md border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-700">
               <Building2 className="h-5 w-5 text-teal-900" />
-              Escrow held on Solana Network
+              Escrow held on Sui Network
             </div>
           </div>
         </div>

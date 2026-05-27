@@ -29,9 +29,12 @@ export function Header() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 text-sm sm:gap-4">
-          <button className="text-xs font-medium text-slate-800 transition hover:text-teal-800 sm:text-sm">
+          <a
+            href="/login"
+            className="text-xs font-medium text-slate-800 transition hover:text-teal-800 sm:text-sm"
+          >
             Log In
-          </button>
+          </a>
           <button className="rounded-md bg-teal-800 px-4 py-3 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-900 sm:px-5 sm:text-sm">
             Get Started
           </button>

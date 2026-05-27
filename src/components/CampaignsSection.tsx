@@ -4,11 +4,11 @@ import { CampaignCard } from "./CampaignCard";
 
 export function CampaignsSection() {
   return (
-    <section className="bg-slate-100 px-6 py-24">
+    <section className="bg-slate-100 px-4 py-16 sm:px-6 sm:py-24">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
-            <h2 className="text-4xl font-bold tracking-tight text-slate-950">
+            <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
               Live Campaigns
             </h2>
             <p className="mt-3 text-base text-slate-600">
@@ -24,7 +24,7 @@ export function CampaignsSection() {
           </a>
         </div>
 
-        <div className="mt-10 grid gap-6 md:grid-cols-3">
+        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {campaigns.map((campaign) => (
             <CampaignCard key={campaign.id} campaign={campaign} />
           ))}

@@ -3,8 +3,8 @@ type BrandLogoProps = {
 };
 
 const logoSize = {
-  sm: "h-9 w-9",
-  md: "h-12 w-12",
+  sm: "h-8 w-8 sm:h-9 sm:w-9",
+  md: "h-10 w-10 sm:h-12 sm:w-12",
 };
 
 export function BrandLogo({ size = "sm" }: BrandLogoProps) {

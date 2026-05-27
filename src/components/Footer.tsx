@@ -7,8 +7,8 @@ export function Footer() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-slate-100 px-6 py-14">
-      <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-[1fr_auto_auto]">
+    <footer className="bg-slate-100 px-4 py-14 sm:px-6">
+      <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto] lg:gap-12">
         <div className="max-w-md">
           <h2 className="text-xl">
             <BrandLogo size="md" />
@@ -19,7 +19,7 @@ export function Footer() {
             zero-compromise transparency.
           </p>
           <p className="mt-8 text-sm text-slate-500">
-            © {currentYear} Korede. Secured by Sui. CAC Certified.
+            &copy; {currentYear} Korede. Secured by Sui. CAC Certified.
           </p>
         </div>
 

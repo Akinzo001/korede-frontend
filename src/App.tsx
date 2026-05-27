@@ -8,7 +8,7 @@ import { LiveLedger } from "./components/LiveLedger";
 
 export default function App() {
   return (
-    <>
+    <div className="min-h-screen overflow-x-hidden bg-white">
       <Header />
       <main>
         <Hero />
@@ -18,6 +18,6 @@ export default function App() {
         <CallToAction />
       </main>
       <Footer />
-    </>
+    </div>
   );
 }

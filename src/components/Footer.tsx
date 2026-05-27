@@ -1,3 +1,5 @@
+import { BrandLogo } from "./BrandLogo";
+
 const platformLinks = ["Explore Cases", "Hospital Partners", "Verification Process"];
 const trustLinks = ["Privacy Policy", "Terms of Service", "Security Disclosure"];
 
@@ -8,7 +10,9 @@ export function Footer() {
     <footer className="bg-slate-100 px-6 py-14">
       <div className="mx-auto grid max-w-7xl gap-12 md:grid-cols-[1fr_auto_auto]">
         <div className="max-w-md">
-          <h2 className="text-xl font-bold text-teal-950">Korede</h2>
+          <h2 className="text-xl">
+            <BrandLogo size="md" />
+          </h2>
           <p className="mt-5 text-sm leading-6 text-slate-600">
             A blockchain-powered healthcare fintech ensuring every donation
             fulfills its mission. Built on Sui for speed, trust, and

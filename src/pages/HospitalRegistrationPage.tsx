@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config/api";
 
 const benefits = [
@@ -126,6 +126,7 @@ const requiredFieldsByStep: Record<
 };
 
 export function HospitalRegistrationPage() {
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<RegistrationFormState>(initialFormState);
   const [statusMessage, setStatusMessage] = useState("");
@@ -194,6 +195,9 @@ export function HospitalRegistrationPage() {
         responseBody?.message ??
           "Hospital registered successfully. Check your email for verification details.",
       );
+      navigate("/hospital/verify-email", {
+        state: { email: formData.email.trim() },
+      });
     } catch (error) {
       setStatusType("error");
       setStatusMessage(

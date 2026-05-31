@@ -196,7 +196,10 @@ export function HospitalRegistrationPage() {
           "Hospital registered successfully. Check your email for verification details.",
       );
       navigate("/hospital/verify-email", {
-        state: { email: formData.email.trim() },
+        state: {
+          email: formData.email.trim(),
+          otpExpiresInSeconds: responseBody?.otp_expires_in_seconds,
+        },
       });
     } catch (error) {
       setStatusType("error");

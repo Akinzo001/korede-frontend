@@ -1,22 +1,41 @@
 import { ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { API_BASE_URL } from "../config/api";
 
 type VerificationLocationState = {
   email?: string;
+  otpExpiresInSeconds?: number;
 };
 
 export function OtpVerificationPage() {
   const location = useLocation();
   const state = location.state as VerificationLocationState | null;
   const email = state?.email ?? "";
+  const [secondsRemaining, setSecondsRemaining] = useState(
+    typeof state?.otpExpiresInSeconds === "number"
+      ? state.otpExpiresInSeconds
+      : 0,
+  );
   const [otp, setOtp] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [statusType, setStatusType] = useState<"success" | "error">("success");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const canSubmit = useMemo(() => email.trim() !== "" && otp.trim() !== "", [email, otp]);
+  const countdownLabel = formatCountdown(secondsRemaining);
+
+  useEffect(() => {
+    if (secondsRemaining <= 0) {
+      return;
+    }
+
+    const timerId = window.setInterval(() => {
+      setSecondsRemaining((seconds) => Math.max(seconds - 1, 0));
+    }, 1000);
+
+    return () => window.clearInterval(timerId);
+  }, [secondsRemaining]);
 
   const verifyEmail = async () => {
     setStatusMessage("");
@@ -94,6 +113,17 @@ export function OtpVerificationPage() {
                 {email}
               </p>
             )}
+            {state?.otpExpiresInSeconds !== undefined && (
+              <p
+                className={`mt-4 text-sm font-semibold ${
+                  secondsRemaining > 0 ? "text-teal-800" : "text-red-700"
+                }`}
+              >
+                {secondsRemaining > 0
+                  ? `OTP expires in ${countdownLabel}`
+                  : "OTP has expired. Request a new code to continue."}
+              </p>
+            )}
           </div>
 
           <div className="mt-8 space-y-5">
@@ -142,4 +172,11 @@ export function OtpVerificationPage() {
       </section>
     </div>
   );
+}
+
+function formatCountdown(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }

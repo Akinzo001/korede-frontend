@@ -11,6 +11,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { API_BASE_URL } from "../config/api";
 
 const benefits = [
   {
@@ -35,15 +36,174 @@ const benefits = [
 
 const steps = ["Basic Info", "Document Upload", "Finance Details"];
 
+type DocumentPayload = {
+  content_base64: string;
+  mime_type: string;
+  original_filename: string;
+};
+
+type RegistrationFormState = {
+  administrator_name: string;
+  bank_name: string;
+  cac_document: DocumentPayload | null;
+  cac_registration_number: string;
+  corporate_account_name: string;
+  corporate_account_number: string;
+  email: string;
+  medical_license_document: DocumentPayload | null;
+  medical_license_number: string;
+  name: string;
+  official_address: string;
+  password: string;
+  phone_number: string;
+  terms_accepted: boolean;
+};
+
+const initialFormState: RegistrationFormState = {
+  administrator_name: "",
+  bank_name: "",
+  cac_document: null,
+  cac_registration_number: "",
+  corporate_account_name: "",
+  corporate_account_number: "",
+  email: "",
+  medical_license_document: null,
+  medical_license_number: "",
+  name: "",
+  official_address: "",
+  password: "",
+  phone_number: "",
+  terms_accepted: false,
+};
+
+const requiredFields: Array<{
+  key: keyof RegistrationFormState;
+  label: string;
+}> = [
+  { key: "name", label: "Hospital name" },
+  { key: "cac_registration_number", label: "CAC registration number" },
+  { key: "medical_license_number", label: "Medical license number" },
+  { key: "official_address", label: "Official address" },
+  { key: "administrator_name", label: "Administrator name" },
+  { key: "email", label: "Admin email" },
+  { key: "password", label: "Password" },
+  { key: "cac_document", label: "CAC certificate" },
+  { key: "medical_license_document", label: "Medical license document" },
+  { key: "bank_name", label: "Settlement bank" },
+  { key: "corporate_account_number", label: "Corporate account number" },
+  { key: "corporate_account_name", label: "Corporate account name" },
+  { key: "phone_number", label: "Phone number" },
+  { key: "terms_accepted", label: "Terms agreement" },
+];
+
+const requiredFieldsByStep: Record<
+  number,
+  Array<{
+    key: keyof RegistrationFormState;
+    label: string;
+  }>
+> = {
+  1: [
+    { key: "name", label: "Hospital name" },
+    { key: "cac_registration_number", label: "CAC registration number" },
+    { key: "medical_license_number", label: "Medical license number" },
+    { key: "official_address", label: "Official address" },
+    { key: "administrator_name", label: "Administrator name" },
+    { key: "email", label: "Admin email" },
+    { key: "password", label: "Password" },
+  ],
+  2: [
+    { key: "cac_document", label: "CAC certificate" },
+    { key: "medical_license_document", label: "Medical license document" },
+  ],
+  3: [
+    { key: "bank_name", label: "Settlement bank" },
+    { key: "corporate_account_number", label: "Corporate account number" },
+    { key: "corporate_account_name", label: "Corporate account name" },
+    { key: "phone_number", label: "Phone number" },
+    { key: "terms_accepted", label: "Terms agreement" },
+  ],
+};
+
 export function HospitalRegistrationPage() {
   const [currentStep, setCurrentStep] = useState(1);
+  const [formData, setFormData] = useState<RegistrationFormState>(initialFormState);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [statusType, setStatusType] = useState<"success" | "error">("success");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const updateField = (
+    field: keyof RegistrationFormState,
+    value: string | boolean | DocumentPayload | null,
+  ) => {
+    setFormData((current) => ({ ...current, [field]: value }));
+    setStatusMessage("");
+  };
 
   const goToNextStep = () => {
+    const missingField = getMissingRequiredField(
+      formData,
+      requiredFieldsByStep[currentStep] ?? [],
+    );
+
+    if (missingField) {
+      setStatusType("error");
+      setStatusMessage(`${missingField} is required before continuing.`);
+      return;
+    }
+
+    setStatusMessage("");
     setCurrentStep((step) => Math.min(step + 1, steps.length));
   };
 
   const goToPreviousStep = () => {
     setCurrentStep((step) => Math.max(step - 1, 1));
+  };
+
+  const submitRegistration = async () => {
+    setStatusMessage("");
+
+    const missingField = getMissingRequiredField(formData, requiredFields);
+
+    if (missingField) {
+      setStatusType("error");
+      setStatusMessage(`${missingField} is required before submitting.`);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/hospitals/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const responseBody = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const fallbackMessage = "Unable to submit hospital registration.";
+        throw new Error(responseBody?.message ?? fallbackMessage);
+      }
+
+      setStatusType("success");
+      setStatusMessage(
+        responseBody?.message ??
+          "Hospital registered successfully. Check your email for verification details.",
+      );
+    } catch (error) {
+      setStatusType("error");
+      setStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit hospital registration.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -96,7 +256,7 @@ export function HospitalRegistrationPage() {
 
             <div className="mt-12 hidden overflow-hidden rounded-xl bg-teal-950/30 shadow-2xl shadow-teal-950/30 lg:mt-auto lg:block">
               <img
-                src="https://images.unsplash.com/photo-1581093458791-9f3c3900df7b?auto=format&fit=crop&w=1000&q=80"
+                src="/hospital-registration.png"
                 alt="Medical team reviewing digital records"
                 className="h-64 w-full object-cover opacity-80"
               />
@@ -121,15 +281,38 @@ export function HospitalRegistrationPage() {
               className="mt-8 space-y-8 sm:mt-10 sm:space-y-10"
               onSubmit={(event) => event.preventDefault()}
             >
-              {currentStep === 1 && <BasicInfoStep />}
-              {currentStep === 2 && <VerificationDocumentsStep />}
-              {currentStep === 3 && <FinanceDetailsStep />}
+              {currentStep === 1 && (
+                <BasicInfoStep formData={formData} onChange={updateField} />
+              )}
+              {currentStep === 2 && (
+                <VerificationDocumentsStep
+                  formData={formData}
+                  onChange={updateField}
+                />
+              )}
+              {currentStep === 3 && (
+                <FinanceDetailsStep formData={formData} onChange={updateField} />
+              )}
 
               <FormActions
                 currentStep={currentStep}
                 onPrevious={goToPreviousStep}
                 onNext={goToNextStep}
+                onSubmit={submitRegistration}
+                isSubmitting={isSubmitting}
               />
+
+              {statusMessage && (
+                <p
+                  className={`rounded-lg px-4 py-3 text-center text-sm font-medium ${
+                    statusType === "success"
+                      ? "bg-teal-50 text-teal-900"
+                      : "bg-red-50 text-red-800"
+                  }`}
+                >
+                  {statusMessage}
+                </p>
+              )}
 
               <p className="text-center text-sm text-slate-700">
                 Already registered?{" "}
@@ -143,6 +326,27 @@ export function HospitalRegistrationPage() {
       </div>
     </div>
   );
+}
+
+function getMissingRequiredField(
+  formData: RegistrationFormState,
+  fields: typeof requiredFields,
+) {
+  const missing = fields.find(({ key }) => {
+    const value = formData[key];
+
+    if (typeof value === "string") {
+      return value.trim() === "";
+    }
+
+    if (typeof value === "boolean") {
+      return value === false;
+    }
+
+    return value === null;
+  });
+
+  return missing?.label ?? "";
 }
 
 type RegistrationStepperProps = {
@@ -185,22 +389,44 @@ function RegistrationStepper({ currentStep }: RegistrationStepperProps) {
   );
 }
 
-function BasicInfoStep() {
+type StepProps = {
+  formData: RegistrationFormState;
+  onChange: (
+    field: keyof RegistrationFormState,
+    value: string | boolean | DocumentPayload | null,
+  ) => void;
+};
+
+function BasicInfoStep({ formData, onChange }: StepProps) {
   return (
     <>
       <FormSection title="Basic Information">
         <Field label="Hospital Name" className="sm:col-span-2">
-          <TextInput placeholder="e.g. St. Jude Medical Center" />
+          <TextInput
+            value={formData.name}
+            onChange={(value) => onChange("name", value)}
+            placeholder="e.g. St. Jude Medical Center"
+          />
         </Field>
         <Field label="CAC Registration Number">
-          <TextInput placeholder="RC-1234567" />
+          <TextInput
+            value={formData.cac_registration_number}
+            onChange={(value) => onChange("cac_registration_number", value)}
+            placeholder="RC-1234567"
+          />
         </Field>
         <Field label="Medical License Number">
-          <TextInput placeholder="MLN-98765" />
+          <TextInput
+            value={formData.medical_license_number}
+            onChange={(value) => onChange("medical_license_number", value)}
+            placeholder="MLN-98765"
+          />
         </Field>
         <Field label="Official Address" className="sm:col-span-2">
           <IconInput
             icon={MapPin}
+            value={formData.official_address}
+            onChange={(value) => onChange("official_address", value)}
             placeholder="123 Health Avenue, Medical District"
           />
         </Field>
@@ -208,13 +434,25 @@ function BasicInfoStep() {
 
       <FormSection title="Administrator Details">
         <Field label="Administrator Name">
-          <TextInput placeholder="Dr. Jane Doe" />
+          <TextInput
+            value={formData.administrator_name}
+            onChange={(value) => onChange("administrator_name", value)}
+            placeholder="Dr. Jane Doe"
+          />
         </Field>
         <Field label="Admin Email">
-          <TextInput type="email" placeholder="admin@hospital.com" />
+          <TextInput
+            type="email"
+            value={formData.email}
+            onChange={(value) => onChange("email", value)}
+            placeholder="admin@hospital.com"
+          />
         </Field>
         <Field label="Password" className="sm:col-span-2">
-          <PasswordInput />
+          <PasswordInput
+            value={formData.password}
+            onChange={(value) => onChange("password", value)}
+          />
           <p className="mt-2 text-xs text-slate-600">
             Must be at least 12 characters, including numbers and symbols.
           </p>
@@ -224,34 +462,68 @@ function BasicInfoStep() {
   );
 }
 
-function VerificationDocumentsStep() {
+function VerificationDocumentsStep({ formData, onChange }: StepProps) {
   return (
     <FormSection title="Verification Documents">
-      <div className="sm:col-span-2">
-        <label
-          htmlFor="documents"
-          className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center transition hover:border-teal-700 hover:bg-teal-50/40 sm:min-h-64 sm:px-6 sm:py-10"
-        >
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-200 text-slate-600 sm:h-16 sm:w-16">
-            <UploadCloud className="h-6 w-6 sm:h-7 sm:w-7" />
-          </span>
-          <span className="mt-4 font-semibold text-slate-950 sm:mt-5">
-            Upload CAC Certificate & Medical License
-          </span>
-          <span className="mt-3 max-w-md text-sm leading-6 text-slate-600">
-            Drag and drop files here, or click to browse. Supported formats:
-            PDF, JPG, PNG. Max 10MB per file.
-          </span>
-          <span className="mt-6 rounded-lg border border-slate-400 bg-white px-5 py-3 text-sm font-medium text-slate-950">
-            Select Files
-          </span>
-          <input id="documents" type="file" multiple className="sr-only" />
-        </label>
-      </div>
+      <DocumentUpload
+        id="cac-document"
+        title="Upload CAC Certificate"
+        description="PDF, JPG, or PNG. Max 10MB."
+        document={formData.cac_document}
+        onDocumentChange={(document) => onChange("cac_document", document)}
+      />
+
+      <DocumentUpload
+        id="medical-license-document"
+        title="Upload Medical License"
+        description="PDF, JPG, or PNG. Max 10MB."
+        document={formData.medical_license_document}
+        onDocumentChange={(document) =>
+          onChange("medical_license_document", document)
+        }
+      />
+
+    </FormSection>
+  );
+}
+
+function FinanceDetailsStep({ formData, onChange }: StepProps) {
+  return (
+    <FormSection title="Finance Details">
+      <Field label="Settlement Bank">
+        <TextInput
+          value={formData.bank_name}
+          onChange={(value) => onChange("bank_name", value)}
+          placeholder="e.g. Wema Bank"
+        />
+      </Field>
+      <Field label="Corporate Account Number">
+        <TextInput
+          value={formData.corporate_account_number}
+          onChange={(value) => onChange("corporate_account_number", value)}
+          placeholder="0123456789"
+        />
+      </Field>
+      <Field label="Account Name" className="sm:col-span-2">
+        <TextInput
+          value={formData.corporate_account_name}
+          onChange={(value) => onChange("corporate_account_name", value)}
+          placeholder="St. Jude Medical Center Limited"
+        />
+      </Field>
+      <Field label="Phone Number" className="sm:col-span-2">
+        <TextInput
+          value={formData.phone_number}
+          onChange={(value) => onChange("phone_number", value)}
+          placeholder="+234 801 234 5678"
+        />
+      </Field>
 
       <label className="flex gap-3 text-sm leading-6 text-slate-700 sm:col-span-2 sm:gap-4">
         <input
           type="checkbox"
+          checked={formData.terms_accepted}
+          onChange={(event) => onChange("terms_accepted", event.target.checked)}
           className="mt-1 h-5 w-5 shrink-0 rounded border-slate-300 text-teal-800 focus:ring-teal-800"
         />
         <span>
@@ -271,35 +543,21 @@ function VerificationDocumentsStep() {
   );
 }
 
-function FinanceDetailsStep() {
-  return (
-    <FormSection title="Finance Details">
-      <Field label="Settlement Bank">
-        <TextInput placeholder="e.g. Wema Bank" />
-      </Field>
-      <Field label="Corporate Account Number">
-        <TextInput placeholder="0123456789" />
-      </Field>
-      <Field label="Account Name" className="sm:col-span-2">
-        <TextInput placeholder="St. Jude Medical Center Limited" />
-      </Field>
-      <Field label="Finance Contact Email">
-        <TextInput type="email" placeholder="finance@hospital.com" />
-      </Field>
-      <Field label="Finance Contact Phone">
-        <TextInput placeholder="+234 801 234 5678" />
-      </Field>
-    </FormSection>
-  );
-}
-
 type FormActionsProps = {
   currentStep: number;
   onPrevious: () => void;
   onNext: () => void;
+  onSubmit: () => void;
+  isSubmitting: boolean;
 };
 
-function FormActions({ currentStep, onPrevious, onNext }: FormActionsProps) {
+function FormActions({
+  currentStep,
+  onPrevious,
+  onNext,
+  onSubmit,
+  isSubmitting,
+}: FormActionsProps) {
   const isFinalStep = currentStep === steps.length;
 
   return (
@@ -317,10 +575,15 @@ function FormActions({ currentStep, onPrevious, onNext }: FormActionsProps) {
 
       <button
         type={isFinalStep ? "submit" : "button"}
-        onClick={isFinalStep ? undefined : onNext}
-        className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-teal-800 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/10 transition hover:bg-teal-900"
+        onClick={isFinalStep ? onSubmit : onNext}
+        disabled={isSubmitting}
+        className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-teal-800 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/10 transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:bg-slate-400"
       >
-        {isFinalStep ? "Submit Verification Request" : "Next"}
+        {isFinalStep
+          ? isSubmitting
+            ? "Submitting..."
+            : "Submit Verification Request"
+          : "Next"}
         <ArrowRight className="h-4 w-4" />
       </button>
     </div>
@@ -361,14 +624,18 @@ function Field({ label, children, className = "" }: FieldProps) {
 }
 
 type TextInputProps = {
+  value: string;
+  onChange: (value: string) => void;
   placeholder: string;
   type?: "email" | "text";
 };
 
-function TextInput({ placeholder, type = "text" }: TextInputProps) {
+function TextInput({ value, onChange, placeholder, type = "text" }: TextInputProps) {
   return (
     <input
       type={type}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       className="h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:h-14 sm:px-5"
     />
@@ -377,15 +644,19 @@ function TextInput({ placeholder, type = "text" }: TextInputProps) {
 
 type IconInputProps = {
   icon: LucideIcon;
+  value: string;
+  onChange: (value: string) => void;
   placeholder: string;
 };
 
-function IconInput({ icon: Icon, placeholder }: IconInputProps) {
+function IconInput({ icon: Icon, value, onChange, placeholder }: IconInputProps) {
   return (
     <div className="relative">
       <Icon className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
       <input
         type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         className="h-12 w-full rounded-lg border border-slate-300 bg-slate-50 pl-12 pr-4 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:h-14 sm:pr-5"
       />
@@ -393,11 +664,18 @@ function IconInput({ icon: Icon, placeholder }: IconInputProps) {
   );
 }
 
-function PasswordInput() {
+type PasswordInputProps = {
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function PasswordInput({ value, onChange }: PasswordInputProps) {
   return (
     <div className="relative">
       <input
         type="password"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
         placeholder="Enter a secure password"
         className="h-12 w-full rounded-lg border border-slate-300 bg-slate-50 px-4 pr-12 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:h-14 sm:px-5"
       />
@@ -410,4 +688,88 @@ function PasswordInput() {
       </button>
     </div>
   );
+}
+
+type DocumentUploadProps = {
+  id: string;
+  title: string;
+  description: string;
+  document: DocumentPayload | null;
+  onDocumentChange: (document: DocumentPayload | null) => void;
+};
+
+function DocumentUpload({
+  id,
+  title,
+  description,
+  document,
+  onDocumentChange,
+}: DocumentUploadProps) {
+  const handleFileChange = async (file: File | undefined) => {
+    if (!file) {
+      onDocumentChange(null);
+      return;
+    }
+
+    const content_base64 = await fileToBase64(file);
+    onDocumentChange({
+      content_base64,
+      mime_type: file.type,
+      original_filename: file.name,
+    });
+  };
+
+  return (
+    <label
+      htmlFor={id}
+      className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center transition hover:border-teal-700 hover:bg-teal-50/40 sm:min-h-64 sm:px-6 sm:py-10"
+    >
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-200 text-slate-600 sm:h-16 sm:w-16">
+        <UploadCloud className="h-6 w-6 sm:h-7 sm:w-7" />
+      </span>
+      <span className="mt-4 font-semibold text-slate-950 sm:mt-5">
+        {title}
+      </span>
+      <span className="mt-3 max-w-md text-sm leading-6 text-slate-600">
+        {description}
+      </span>
+      <span className="mt-6 rounded-lg border border-slate-400 bg-white px-5 py-3 text-sm font-medium text-slate-950">
+        {document ? "Replace File" : "Select File"}
+      </span>
+      {document && (
+        <span className="mt-3 max-w-full truncate text-xs font-medium text-teal-800">
+          {document.original_filename}
+        </span>
+      )}
+      <input
+        id={id}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+        className="sr-only"
+        onChange={(event) => {
+          void handleFileChange(event.target.files?.[0]);
+        }}
+      />
+    </label>
+  );
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = reader.result;
+
+      if (typeof result !== "string") {
+        reject(new Error("Unable to read selected file."));
+        return;
+      }
+
+      resolve(result.split(",")[1] ?? "");
+    };
+
+    reader.onerror = () => reject(new Error("Unable to read selected file."));
+    reader.readAsDataURL(file);
+  });
 }

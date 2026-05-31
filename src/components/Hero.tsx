@@ -1,4 +1,5 @@
 import { Building2, ShieldCheck } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export function Hero() {
   return (
@@ -24,9 +25,12 @@ export function Hero() {
             <button className="w-full rounded-md bg-teal-800 px-7 py-4 text-sm font-bold text-white shadow-lg shadow-teal-900/10 transition hover:bg-teal-900 sm:w-auto">
               Explore Active Cases
             </button>
-            <button className="w-full rounded-md border border-teal-950 px-7 py-4 text-sm font-bold text-teal-950 transition hover:bg-white sm:w-auto">
+            <Link
+              to="/hospital/register"
+              className="inline-flex w-full items-center justify-center rounded-md border border-teal-950 px-7 py-4 text-sm font-bold text-teal-950 transition hover:bg-white sm:w-auto"
+            >
               For Hospitals: Partner With Us
-            </button>
+            </Link>
           </div>
         </div>
 

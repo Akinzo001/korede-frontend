@@ -87,9 +87,9 @@ export function LoginPage() {
           <div className="mt-10 space-y-5 text-center text-lg text-slate-800 sm:text-xl">
             <p>
               Need a verification check?{" "}
-              <a href="#" className="font-medium text-teal-800">
+              <Link to="/hospital/register" className="font-medium text-teal-800">
                 Hospital Partner Signup.
-              </a>
+              </Link>
             </p>
             <p>
               Need to raise funds?{" "}

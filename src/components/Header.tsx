@@ -1,7 +1,11 @@
 import { Link } from "react-router-dom";
 import { BrandLogo } from "./BrandLogo";
 
-const navItems = ["Explore Cases", "How it Works", "For Hospitals"];
+const navItems = [
+  { label: "Explore Cases", href: "#" },
+  { label: "How it Works", href: "#" },
+  { label: "For Hospitals", href: "/hospital/register" },
+];
 
 export function Header() {
   return (
@@ -14,17 +18,17 @@ export function Header() {
 
           <nav className="hidden items-center gap-7 text-sm text-slate-700 lg:flex">
             {navItems.map((item, index) => (
-              <a
-                key={item}
-                href="#"
+              <Link
+                key={item.label}
+                to={item.href}
                 className={
                   index === 0
                     ? "border-b-2 border-teal-800 pb-1 font-medium text-teal-950"
                     : "transition hover:text-teal-800"
                 }
               >
-                {item}
-              </a>
+                {item.label}
+              </Link>
             ))}
           </nav>
         </div>

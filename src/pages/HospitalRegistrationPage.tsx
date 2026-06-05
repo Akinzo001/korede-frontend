@@ -35,6 +35,12 @@ const benefits = [
 ];
 
 const steps = ["Basic Info", "Document Upload", "Finance Details"];
+const maxDocumentSizeBytes = 10 * 1024 * 1024;
+const supportedDocumentTypes = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
 
 type DocumentPayload = {
   content_base64: string;
@@ -57,6 +63,11 @@ type RegistrationFormState = {
   password: string;
   phone_number: string;
   terms_accepted: boolean;
+};
+
+type RegistrationSuccessResponse = {
+  message?: string;
+  otp_expires_in_seconds?: number;
 };
 
 const initialFormState: RegistrationFormState = {
@@ -175,30 +186,33 @@ export function HospitalRegistrationPage() {
     setIsSubmitting(true);
 
     try {
+      const payload = buildRegistrationPayload(formData);
       const response = await fetch(`${API_BASE_URL}/api/v1/hospitals/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
-      const responseBody = await response.json().catch(() => null);
+      const responseBody = await parseJsonResponse(response);
 
       if (!response.ok) {
         const fallbackMessage = "Unable to submit hospital registration.";
-        throw new Error(responseBody?.message ?? fallbackMessage);
+        throw new Error(getApiErrorMessage(responseBody, fallbackMessage));
       }
 
       setStatusType("success");
+      const successResponse = getRegistrationSuccessResponse(responseBody);
+
       setStatusMessage(
-        responseBody?.message ??
+        successResponse.message ??
           "Hospital registered successfully. Check your email for verification details.",
       );
       navigate("/hospital/verify-email", {
         state: {
           email: formData.email.trim(),
-          otpExpiresInSeconds: responseBody?.otp_expires_in_seconds,
+          otpExpiresInSeconds: successResponse.otp_expires_in_seconds,
         },
       });
     } catch (error) {
@@ -295,6 +309,10 @@ export function HospitalRegistrationPage() {
                 <VerificationDocumentsStep
                   formData={formData}
                   onChange={updateField}
+                  onError={(message) => {
+                    setStatusType("error");
+                    setStatusMessage(message);
+                  }}
                 />
               )}
               {currentStep === 3 && (
@@ -354,6 +372,79 @@ function getMissingRequiredField(
   });
 
   return missing?.label ?? "";
+}
+
+function buildRegistrationPayload(formData: RegistrationFormState) {
+  return {
+    administrator_name: formData.administrator_name.trim(),
+    bank_name: formData.bank_name.trim(),
+    cac_document: formData.cac_document,
+    cac_registration_number: formData.cac_registration_number.trim(),
+    corporate_account_name: formData.corporate_account_name.trim(),
+    corporate_account_number: formData.corporate_account_number.trim(),
+    email: formData.email.trim(),
+    medical_license_document: formData.medical_license_document,
+    medical_license_number: formData.medical_license_number.trim(),
+    name: formData.name.trim(),
+    official_address: formData.official_address.trim(),
+    password: formData.password,
+    phone_number: formData.phone_number.trim(),
+    terms_accepted: formData.terms_accepted,
+  };
+}
+
+async function parseJsonResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text };
+  }
+}
+
+function getApiErrorMessage(responseBody: unknown, fallbackMessage: string) {
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    "message" in responseBody &&
+    typeof responseBody.message === "string"
+  ) {
+    return responseBody.message;
+  }
+
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    "detail" in responseBody &&
+    typeof responseBody.detail === "string"
+  ) {
+    return responseBody.detail;
+  }
+
+  return fallbackMessage;
+}
+
+function getRegistrationSuccessResponse(
+  responseBody: unknown,
+): RegistrationSuccessResponse {
+  if (!responseBody || typeof responseBody !== "object") {
+    return {};
+  }
+
+  const body = responseBody as Record<string, unknown>;
+
+  return {
+    message: typeof body.message === "string" ? body.message : undefined,
+    otp_expires_in_seconds:
+      typeof body.otp_expires_in_seconds === "number"
+        ? body.otp_expires_in_seconds
+        : undefined,
+  };
 }
 
 type RegistrationStepperProps = {
@@ -469,7 +560,15 @@ function BasicInfoStep({ formData, onChange }: StepProps) {
   );
 }
 
-function VerificationDocumentsStep({ formData, onChange }: StepProps) {
+type VerificationDocumentsStepProps = StepProps & {
+  onError: (message: string) => void;
+};
+
+function VerificationDocumentsStep({
+  formData,
+  onChange,
+  onError,
+}: VerificationDocumentsStepProps) {
   return (
     <FormSection title="Verification Documents">
       <DocumentUpload
@@ -478,6 +577,7 @@ function VerificationDocumentsStep({ formData, onChange }: StepProps) {
         description="PDF, JPG, or PNG. Max 10MB."
         document={formData.cac_document}
         onDocumentChange={(document) => onChange("cac_document", document)}
+        onError={onError}
       />
 
       <DocumentUpload
@@ -488,6 +588,7 @@ function VerificationDocumentsStep({ formData, onChange }: StepProps) {
         onDocumentChange={(document) =>
           onChange("medical_license_document", document)
         }
+        onError={onError}
       />
 
     </FormSection>
@@ -703,6 +804,7 @@ type DocumentUploadProps = {
   description: string;
   document: DocumentPayload | null;
   onDocumentChange: (document: DocumentPayload | null) => void;
+  onError: (message: string) => void;
 };
 
 function DocumentUpload({
@@ -711,6 +813,7 @@ function DocumentUpload({
   description,
   document,
   onDocumentChange,
+  onError,
 }: DocumentUploadProps) {
   const handleFileChange = async (file: File | undefined) => {
     if (!file) {
@@ -718,10 +821,24 @@ function DocumentUpload({
       return;
     }
 
+    if (file.size > maxDocumentSizeBytes) {
+      onDocumentChange(null);
+      onError(`${file.name} is larger than 10MB.`);
+      return;
+    }
+
+    const mimeType = normalizeDocumentMimeType(file);
+
+    if (!supportedDocumentTypes.has(mimeType)) {
+      onDocumentChange(null);
+      onError("Only PDF, JPG, and PNG documents are supported.");
+      return;
+    }
+
     const content_base64 = await fileToBase64(file);
     onDocumentChange({
       content_base64,
-      mime_type: file.type,
+      mime_type: mimeType,
       original_filename: file.name,
     });
   };
@@ -759,6 +876,34 @@ function DocumentUpload({
       />
     </label>
   );
+}
+
+function normalizeDocumentMimeType(file: File) {
+  const browserMimeType = file.type.toLowerCase();
+
+  if (browserMimeType === "image/jpg") {
+    return "image/jpeg";
+  }
+
+  if (supportedDocumentTypes.has(browserMimeType)) {
+    return browserMimeType;
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase();
+
+  if (extension === "pdf") {
+    return "application/pdf";
+  }
+
+  if (extension === "jpg" || extension === "jpeg") {
+    return "image/jpeg";
+  }
+
+  if (extension === "png") {
+    return "image/png";
+  }
+
+  return browserMimeType;
 }
 
 function fileToBase64(file: File): Promise<string> {

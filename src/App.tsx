@@ -4,6 +4,7 @@ import { HospitalRegistrationPage } from "./pages/HospitalRegistrationPage";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OtpVerificationPage } from "./pages/OtpVerificationPage";
+import { PatientRegistrationPage } from "./pages/PatientRegistrationPage";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/hospital/register" element={<HospitalRegistrationPage />} />
           <Route path="/hospital/verify-email" element={<OtpVerificationPage />} />
+          <Route path="/patient/register" element={<PatientRegistrationPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster richColors position="top-right" />

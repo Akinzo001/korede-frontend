@@ -120,9 +120,9 @@ export function LoginPage() {
             </p>
             <p>
               Need to raise funds?{" "}
-              <a href="#" className="font-medium text-amber-700">
+              <Link to="/patient/register" className="font-medium text-amber-700">
                 Start a Patient Case.
-              </a>
+              </Link>
             </p>
           </div>
         </section>

@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarDays, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
 import { BrandLogo } from "../components/BrandLogo";
@@ -42,6 +42,7 @@ const requiredFields: Array<{
 ];
 
 export function PatientRegistrationPage() {
+  const navigate = useNavigate();
   const [formData, setFormData] =
     useState<PatientRegistrationForm>(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,6 +86,12 @@ export function PatientRegistrationPage() {
           "Patient account created successfully.",
         ),
       );
+      navigate("/patient/verify-email", {
+        state: {
+          email: formData.email.trim(),
+          otpExpiresInSeconds: getOtpExpiry(responseBody),
+        },
+      });
       setFormData(initialFormState);
     } catch (error) {
       toast.error(
@@ -325,4 +332,16 @@ function getApiErrorMessage(responseBody: unknown, fallbackMessage: string) {
   }
 
   return fallbackMessage;
+}
+
+function getOtpExpiry(responseBody: unknown) {
+  if (!responseBody || typeof responseBody !== "object") {
+    return 0;
+  }
+
+  const body = responseBody as Record<string, unknown>;
+
+  return typeof body.otp_expires_in_seconds === "number"
+    ? body.otp_expires_in_seconds
+    : 0;
 }

@@ -5,6 +5,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OtpVerificationPage } from "./pages/OtpVerificationPage";
 import { PatientRegistrationPage } from "./pages/PatientRegistrationPage";
+import { PatientOtpVerificationPage } from "./pages/PatientOtpVerificationPage";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="/hospital/register" element={<HospitalRegistrationPage />} />
           <Route path="/hospital/verify-email" element={<OtpVerificationPage />} />
           <Route path="/patient/register" element={<PatientRegistrationPage />} />
+          <Route path="/patient/verify-email" element={<PatientOtpVerificationPage />} />
         </Routes>
       </BrowserRouter>
       <Toaster richColors position="top-right" />

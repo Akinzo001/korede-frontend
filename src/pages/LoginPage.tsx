@@ -1,15 +1,19 @@
 import { Eye } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { API_BASE_URL } from "../config/api";
+import { savePatientSession, type LoginResponse } from "../lib/auth";
 import { BrandLogo } from "../components/BrandLogo";
 
 export function LoginPage() {
+  const navigate = useNavigate();
   const currentYear = new Date().getFullYear();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!email.trim()) {
@@ -22,7 +26,35 @@ export function LoginPage() {
       return;
     }
 
-    toast.info("Login endpoint is not connected yet.");
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+        }),
+      });
+
+      const responseBody = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(responseBody, "Unable to login."));
+      }
+
+      const loginResponse = parseLoginResponse(responseBody);
+      savePatientSession(loginResponse);
+      toast.success(loginResponse.message || "Login successful.");
+      navigate("/patient/dashboard", { replace: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to login.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -105,9 +137,10 @@ export function LoginPage() {
 
             <button
               type="submit"
-              className="mt-9 h-14 w-full rounded-lg bg-teal-800 text-base font-bold text-white transition hover:bg-teal-900"
+              disabled={isSubmitting}
+              className="mt-9 h-14 w-full rounded-lg bg-teal-800 text-base font-bold text-white transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
-              Login
+              {isSubmitting ? "Logging in..." : "Login"}
             </button>
           </form>
 
@@ -144,4 +177,68 @@ export function LoginPage() {
       </footer>
     </div>
   );
+}
+
+async function parseJsonResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text };
+  }
+}
+
+function getApiErrorMessage(responseBody: unknown, fallbackMessage: string) {
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    "message" in responseBody &&
+    typeof responseBody.message === "string"
+  ) {
+    return responseBody.message;
+  }
+
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    "detail" in responseBody &&
+    typeof responseBody.detail === "string"
+  ) {
+    return responseBody.detail;
+  }
+
+  return fallbackMessage;
+}
+
+function parseLoginResponse(responseBody: unknown): LoginResponse {
+  if (!responseBody || typeof responseBody !== "object") {
+    throw new Error("Invalid login response.");
+  }
+
+  const body = responseBody as Partial<LoginResponse>;
+
+  if (!body.access_token || !body.refresh_token || !body.patient) {
+    throw new Error("Invalid login response.");
+  }
+
+  return {
+    access_token: body.access_token,
+    email: body.email ?? body.patient.email,
+    expires_in: body.expires_in ?? 0,
+    login_challenge_id: body.login_challenge_id,
+    medical_cases: Array.isArray(body.medical_cases) ? body.medical_cases : [],
+    message: body.message ?? "Login successful.",
+    otp_expires_in_seconds: body.otp_expires_in_seconds,
+    otp_required: body.otp_required,
+    patient: body.patient,
+    refresh_expires_in: body.refresh_expires_in ?? 0,
+    refresh_token: body.refresh_token,
+    role: body.role ?? "patient",
+    token_type: body.token_type ?? "Bearer",
+  };
 }

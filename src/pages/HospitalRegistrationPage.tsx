@@ -11,6 +11,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
 
 const benefits = [
@@ -160,7 +161,9 @@ export function HospitalRegistrationPage() {
 
     if (missingField) {
       setStatusType("error");
-      setStatusMessage(`${missingField} is required before continuing.`);
+      const message = `${missingField} is required before continuing.`;
+      setStatusMessage(message);
+      toast.error(message);
       return;
     }
 
@@ -179,7 +182,9 @@ export function HospitalRegistrationPage() {
 
     if (missingField) {
       setStatusType("error");
-      setStatusMessage(`${missingField} is required before submitting.`);
+      const message = `${missingField} is required before submitting.`;
+      setStatusMessage(message);
+      toast.error(message);
       return;
     }
 
@@ -205,10 +210,12 @@ export function HospitalRegistrationPage() {
       setStatusType("success");
       const successResponse = getRegistrationSuccessResponse(responseBody);
 
-      setStatusMessage(
+      const message =
         successResponse.message ??
-          "Hospital registered successfully. Check your email for verification details.",
-      );
+        "Hospital registered successfully. Check your email for verification details.";
+
+      setStatusMessage(message);
+      toast.success(message);
       navigate("/hospital/verify-email", {
         state: {
           email: formData.email.trim(),
@@ -217,11 +224,13 @@ export function HospitalRegistrationPage() {
       });
     } catch (error) {
       setStatusType("error");
-      setStatusMessage(
+      const message =
         error instanceof Error
           ? error.message
-          : "Unable to submit hospital registration.",
-      );
+          : "Unable to submit hospital registration.";
+
+      setStatusMessage(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -312,6 +321,7 @@ export function HospitalRegistrationPage() {
                   onError={(message) => {
                     setStatusType("error");
                     setStatusMessage(message);
+                    toast.error(message);
                   }}
                 />
               )}

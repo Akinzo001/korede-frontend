@@ -1,3 +1,4 @@
+import { Toaster } from "sonner";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { HospitalRegistrationPage } from "./pages/HospitalRegistrationPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -15,6 +16,7 @@ export default function App() {
           <Route path="/hospital/verify-email" element={<OtpVerificationPage />} />
         </Routes>
       </BrowserRouter>
+      <Toaster richColors position="top-right" />
     </div>
   );
 }

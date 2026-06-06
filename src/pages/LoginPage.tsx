@@ -1,9 +1,29 @@
 import { Eye } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { BrandLogo } from "../components/BrandLogo";
 
 export function LoginPage() {
   const currentYear = new Date().getFullYear();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleLogin = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!email.trim()) {
+      toast.error("Email address is required.");
+      return;
+    }
+
+    if (!password) {
+      toast.error("Password is required.");
+      return;
+    }
+
+    toast.info("Login endpoint is not connected yet.");
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-white text-slate-950">
@@ -18,7 +38,10 @@ export function LoginPage() {
             </p>
           </div>
 
-          <form className="mt-12 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10">
+          <form
+            className="mt-12 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10"
+            onSubmit={handleLogin}
+          >
             <div>
               <label
                 htmlFor="email"
@@ -30,6 +53,8 @@ export function LoginPage() {
                 id="email"
                 name="email"
                 type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
                 placeholder="Enter your email"
                 className="mt-2 h-14 w-full rounded-lg border border-slate-300 bg-slate-50 px-5 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:text-lg"
               />
@@ -47,6 +72,8 @@ export function LoginPage() {
                   id="password"
                   name="password"
                   type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"
                   className="h-14 w-full rounded-lg border border-slate-300 bg-slate-50 px-5 pr-12 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:text-lg"
                 />

@@ -1,6 +1,7 @@
 import { ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
 
 type VerificationLocationState = {
@@ -42,7 +43,9 @@ export function OtpVerificationPage() {
 
     if (!canSubmit) {
       setStatusType("error");
-      setStatusMessage("Email and OTP are required.");
+      const message = "Email and OTP are required.";
+      setStatusMessage(message);
+      toast.error(message);
       return;
     }
 
@@ -67,15 +70,19 @@ export function OtpVerificationPage() {
       }
 
       setStatusType("success");
-      setStatusMessage(
+      const message =
         responseBody?.message ??
-          "Hospital email verified successfully. You can now sign in.",
-      );
+        "Hospital email verified successfully. You can now sign in.";
+
+      setStatusMessage(message);
+      toast.success(message);
     } catch (error) {
       setStatusType("error");
-      setStatusMessage(
-        error instanceof Error ? error.message : "Unable to verify email.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Unable to verify email.";
+
+      setStatusMessage(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }

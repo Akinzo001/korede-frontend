@@ -131,7 +131,16 @@ export function PatientDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950 lg:grid lg:grid-cols-[260px_1fr] xl:grid-cols-[280px_1fr]">
+    <div className="relative min-h-screen overflow-x-hidden bg-slate-50 text-slate-950 lg:grid lg:grid-cols-[260px_1fr] xl:grid-cols-[280px_1fr]">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 bg-cover bg-no-repeat lg:left-[260px] xl:left-[280px]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(248,250,252,0.58),rgba(248,250,252,0.78)),url('/patient-dashboard-care-bg.png')",
+          backgroundPosition: "70% center",
+        }}
+      />
       <PatientSidebar
         patientName={patientDisplayName}
         isOpen={isSidebarOpen}
@@ -146,7 +155,7 @@ export function PatientDashboardPage() {
         }}
       />
 
-      <div className="min-w-0">
+      <div className="relative z-10 min-w-0">
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:hidden">
           <Link to="/" className="text-3xl">
             <BrandLogo />
@@ -161,7 +170,7 @@ export function PatientDashboardPage() {
           </button>
         </header>
 
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
+        <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
           <div>
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl xl:text-5xl">
               Welcome back, {patientDisplayName}

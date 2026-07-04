@@ -5,7 +5,8 @@ import {
   Link as LinkIcon,
   LogOut,
   Menu,
-  Plus,
+  MessageSquareText,
+  Send,
   Settings,
   Share2,
   ShieldCheck,
@@ -15,6 +16,7 @@ import {
 import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { API_BASE_URL } from "../config/api";
 import {
   clearPatientSession,
   formatNairaFromKobo,
@@ -32,6 +34,7 @@ const navItems = [
 export function PatientDashboardPage() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDeclarationOpen, setIsDeclarationOpen] = useState(false);
   const session = useMemo(() => getPatientSession(), []);
 
   if (!session) {
@@ -58,6 +61,10 @@ export function PatientDashboardPage() {
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={logout}
+        onStartDeclaration={() => {
+          setIsDeclarationOpen(true);
+          setIsSidebarOpen(false);
+        }}
       />
 
       <div className="min-w-0">
@@ -88,10 +95,19 @@ export function PatientDashboardPage() {
           {activeCase ? (
             <PatientCaseDashboard medicalCase={activeCase} />
           ) : (
-            <NoMedicalCaseState patientName={patientDisplayName} />
+            <NoMedicalCaseState
+              patientName={patientDisplayName}
+              onStartDeclaration={() => setIsDeclarationOpen(true)}
+            />
           )}
         </main>
       </div>
+
+      <DeclarationModal
+        isOpen={isDeclarationOpen}
+        accessToken={session.access_token}
+        onClose={() => setIsDeclarationOpen(false)}
+      />
     </div>
   );
 }
@@ -101,6 +117,7 @@ type PatientSidebarProps = {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
+  onStartDeclaration: () => void;
 };
 
 function PatientSidebar({
@@ -108,6 +125,7 @@ function PatientSidebar({
   isOpen,
   onClose,
   onLogout,
+  onStartDeclaration,
 }: PatientSidebarProps) {
   return (
     <>
@@ -165,13 +183,14 @@ function PatientSidebar({
             </button>
           ))}
 
-          <Link
-            to="/patient/register"
+          <button
+            type="button"
+            onClick={onStartDeclaration}
             className="mt-6 flex w-full items-center justify-center gap-3 rounded-lg bg-teal-800 px-5 py-4 text-sm font-bold text-white transition hover:bg-teal-900"
           >
-            <Plus className="h-5 w-5" />
-            New Case Request
-          </Link>
+            <MessageSquareText className="h-5 w-5" />
+            Start declaration
+          </button>
         </nav>
 
         <div className="space-y-2 border-t border-slate-200 px-4 py-6">
@@ -345,7 +364,13 @@ function PatientCaseDashboard({ medicalCase }: { medicalCase: MedicalCase }) {
   );
 }
 
-function NoMedicalCaseState({ patientName }: { patientName: string }) {
+function NoMedicalCaseState({
+  patientName,
+  onStartDeclaration,
+}: {
+  patientName: string;
+  onStartDeclaration: () => void;
+}) {
   return (
     <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm sm:p-12">
       <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal-50 text-teal-800">
@@ -359,21 +384,185 @@ function NoMedicalCaseState({ patientName }: { patientName: string }) {
         a case for you, your funding progress, public link, and supporter updates
         will appear here.
       </p>
-      <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-        <Link
-          to="/patient/register"
+      <div className="mt-8 flex justify-center">
+        <button
+          type="button"
+          onClick={onStartDeclaration}
           className="inline-flex items-center justify-center gap-3 rounded-lg bg-teal-800 px-6 py-4 text-sm font-bold text-white transition hover:bg-teal-900"
         >
-          <Plus className="h-4 w-4" />
-          Start Case Request
-        </Link>
-        <Link
-          to="/hospital/register"
-          className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-6 py-4 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
-        >
-          Invite Hospital Partner
-        </Link>
+          <MessageSquareText className="h-4 w-4" />
+          Start declaration
+        </button>
       </div>
     </section>
   );
+}
+
+function DeclarationModal({
+  isOpen,
+  accessToken,
+  onClose,
+}: {
+  isOpen: boolean;
+  accessToken: string;
+  onClose: () => void;
+}) {
+  const [statement, setStatement] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const trimmedStatement = statement.trim();
+
+  if (!isOpen) {
+    return null;
+  }
+
+  const submitDeclaration = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!trimmedStatement) {
+      toast.error("Please write a short declaration before submitting.");
+      return;
+    }
+
+    if (!accessToken) {
+      toast.error("Please login again before submitting your declaration.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/patients/declaration`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ statement: trimmedStatement }),
+      });
+      const responseBody = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          getApiMessage(responseBody, "Unable to submit declaration."),
+        );
+      }
+
+      toast.success(getApiMessage(responseBody, "Patient declaration saved."));
+      setStatement("");
+      onClose();
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit declaration.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="declaration-title"
+    >
+      <form
+        onSubmit={submitDeclaration}
+        className="w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl shadow-slate-950/20 sm:p-6"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="declaration-title" className="text-xl font-bold">
+              Start declaration
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Share a short statement about yourself and your situation.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close declaration modal"
+            className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <label className="mt-5 block">
+          <span className="text-sm font-semibold text-slate-950">
+            Declaration statement
+          </span>
+          <textarea
+            value={statement}
+            onChange={(event) => setStatement(event.target.value)}
+            rows={5}
+            maxLength={700}
+            placeholder="Tell us a little about yourself..."
+            className="mt-2 min-h-32 w-full resize-y rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10"
+          />
+        </label>
+
+        <div className="mt-2 text-right text-xs font-medium text-slate-500">
+          {trimmedStatement.length}/700
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-300 px-5 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-teal-800 px-5 text-sm font-bold text-white transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            {isSubmitting ? "Submitting..." : "Submit declaration"}
+            <Send className="h-4 w-4" />
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+async function parseJsonResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text };
+  }
+}
+
+function getApiMessage(responseBody: unknown, fallbackMessage: string) {
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    "message" in responseBody &&
+    typeof responseBody.message === "string"
+  ) {
+    return responseBody.message;
+  }
+
+  if (
+    responseBody &&
+    typeof responseBody === "object" &&
+    "detail" in responseBody &&
+    typeof responseBody.detail === "string"
+  ) {
+    return responseBody.detail;
+  }
+
+  return fallbackMessage;
 }

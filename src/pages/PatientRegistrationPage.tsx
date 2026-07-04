@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
 import { BrandLogo } from "../components/BrandLogo";
+import type { Patient } from "../lib/auth";
 
 type PatientRegistrationForm = {
   date_of_birth: string;
@@ -90,6 +91,7 @@ export function PatientRegistrationPage() {
         state: {
           email: formData.email.trim(),
           otpExpiresInSeconds: getOtpExpiry(responseBody),
+          patient: getRegisteredPatient(responseBody, formData),
         },
       });
       setFormData(initialFormState);
@@ -344,4 +346,36 @@ function getOtpExpiry(responseBody: unknown) {
   return typeof body.otp_expires_in_seconds === "number"
     ? body.otp_expires_in_seconds
     : 0;
+}
+
+function getRegisteredPatient(
+  responseBody: unknown,
+  formData: PatientRegistrationForm,
+): Patient {
+  const body =
+    responseBody && typeof responseBody === "object"
+      ? (responseBody as Record<string, unknown>)
+      : null;
+  const patient =
+    body?.patient && typeof body.patient === "object"
+      ? (body.patient as Partial<Patient>)
+      : {};
+
+  return {
+    created_at: patient.created_at ?? "",
+    date_of_birth: patient.date_of_birth ?? formData.date_of_birth.trim(),
+    email: patient.email ?? formData.email.trim(),
+    email_verified: patient.email_verified ?? false,
+    email_verified_at: patient.email_verified_at ?? "",
+    first_name: patient.first_name ?? formData.first_name.trim(),
+    full_name:
+      patient.full_name ??
+      `${formData.first_name.trim()} ${formData.last_name.trim()}`.trim(),
+    gender: patient.gender ?? formData.gender.trim(),
+    id: patient.id ?? "",
+    last_name: patient.last_name ?? formData.last_name.trim(),
+    phone_number: patient.phone_number ?? formData.phone_number.trim(),
+    updated_at: patient.updated_at ?? "",
+    username: patient.username ?? formData.username.trim(),
+  };
 }

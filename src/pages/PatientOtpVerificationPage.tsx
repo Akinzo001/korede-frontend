@@ -1,16 +1,23 @@
 import { ArrowRight, MailCheck, RotateCcw, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
+import {
+  savePatientSession,
+  type LoginResponse,
+  type Patient,
+} from "../lib/auth";
 
 type PatientVerificationLocationState = {
   email?: string;
   otpExpiresInSeconds?: number;
+  patient?: Patient;
 };
 
 export function PatientOtpVerificationPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const state = location.state as PatientVerificationLocationState | null;
   const email = state?.email ?? "";
   const [secondsRemaining, setSecondsRemaining] = useState(
@@ -82,7 +89,11 @@ export function PatientOtpVerificationPage() {
 
       setStatusType("success");
       setStatusMessage(message);
+      savePatientSession(
+        buildVerifiedPatientSession(responseBody, email.trim(), state?.patient),
+      );
       toast.success(message);
+      navigate("/patient/dashboard", { replace: true });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to verify email.";
@@ -295,4 +306,54 @@ function getOtpExpiry(responseBody: unknown) {
   return typeof body.otp_expires_in_seconds === "number"
     ? body.otp_expires_in_seconds
     : 0;
+}
+
+function buildVerifiedPatientSession(
+  responseBody: unknown,
+  email: string,
+  fallbackPatient?: Patient,
+): LoginResponse {
+  const body =
+    responseBody && typeof responseBody === "object"
+      ? (responseBody as Partial<LoginResponse>)
+      : {};
+  const patient = body.patient ?? fallbackPatient ?? buildFallbackPatient(email);
+
+  return {
+    access_token: body.access_token ?? "",
+    email: body.email ?? patient.email,
+    expires_in: body.expires_in ?? 0,
+    login_challenge_id: body.login_challenge_id,
+    medical_cases: Array.isArray(body.medical_cases) ? body.medical_cases : [],
+    message: body.message ?? "Patient email verified successfully.",
+    otp_expires_in_seconds: body.otp_expires_in_seconds,
+    otp_required: body.otp_required ?? false,
+    patient: {
+      ...patient,
+      email_verified: true,
+      email_verified_at: patient.email_verified_at || new Date().toISOString(),
+    },
+    refresh_expires_in: body.refresh_expires_in ?? 0,
+    refresh_token: body.refresh_token ?? "",
+    role: body.role ?? "patient",
+    token_type: body.token_type ?? "Bearer",
+  };
+}
+
+function buildFallbackPatient(email: string): Patient {
+  return {
+    created_at: "",
+    date_of_birth: "",
+    email,
+    email_verified: true,
+    email_verified_at: new Date().toISOString(),
+    first_name: "",
+    full_name: "",
+    gender: "",
+    id: "",
+    last_name: "",
+    phone_number: "",
+    updated_at: "",
+    username: "",
+  };
 }

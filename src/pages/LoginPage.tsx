@@ -1,4 +1,4 @@
-import { Eye } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -8,9 +8,9 @@ import { BrandLogo } from "../components/BrandLogo";
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const currentYear = new Date().getFullYear();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -58,26 +58,26 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-white text-slate-950">
-      <main className="flex flex-1 items-center justify-center px-4 py-12 sm:px-6">
-        <section className="w-full max-w-xl">
+    <div className="flex h-dvh overflow-hidden bg-white text-slate-950">
+      <main className="flex min-h-0 flex-1 items-center justify-center px-4 py-4 sm:px-6">
+        <section className="w-full max-w-md">
           <div className="text-center">
-            <Link to="/" className="inline-flex justify-center text-5xl sm:text-6xl">
-              <BrandLogo size="md" />
+            <Link to="/" className="inline-flex justify-center text-4xl">
+              <BrandLogo />
             </Link>
-            <p className="mt-6 text-xl text-slate-800 sm:text-2xl">
+            <p className="mt-3 text-base font-medium text-slate-800">
               Welcome back to Korede.
             </p>
           </div>
 
           <form
-            className="mt-12 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10"
+            className="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
             onSubmit={handleLogin}
           >
             <div>
               <label
                 htmlFor="email"
-                className="block text-base font-medium text-slate-950"
+                className="block text-sm font-semibold text-slate-950"
               >
                 Email Address
               </label>
@@ -88,14 +88,14 @@ export function LoginPage() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="Enter your email"
-                className="mt-2 h-14 w-full rounded-lg border border-slate-300 bg-slate-50 px-5 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:text-lg"
+                className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-slate-50 px-4 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10"
               />
             </div>
 
-            <div className="mt-6">
+            <div className="mt-4">
               <label
                 htmlFor="password"
-                className="block text-base font-medium text-slate-950"
+                className="block text-sm font-semibold text-slate-950"
               >
                 Password
               </label>
@@ -103,27 +103,33 @@ export function LoginPage() {
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"
-                  className="h-14 w-full rounded-lg border border-slate-300 bg-slate-50 px-5 pr-12 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10 sm:text-lg"
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-slate-50 px-4 pr-11 text-base text-slate-950 outline-none transition placeholder:text-slate-500 focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10"
                 />
                 <button
                   type="button"
-                  aria-label="Show password"
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-teal-800"
+                  onClick={() => setShowPassword((isVisible) => !isVisible)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-teal-800"
                 >
-                  <Eye className="h-5 w-5" />
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>
 
-            <div className="mt-7 flex flex-col gap-4 text-base sm:flex-row sm:items-center sm:justify-between">
-              <label className="flex items-center gap-3 text-slate-800">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+              <label className="flex items-center gap-2 text-slate-800">
                 <input
                   type="checkbox"
-                  className="h-5 w-5 rounded border-slate-300 text-teal-800 focus:ring-teal-800"
+                  className="h-4 w-4 rounded border-slate-300 text-teal-800 focus:ring-teal-800"
                 />
                 Remember me
               </label>
@@ -138,13 +144,13 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="mt-9 h-14 w-full rounded-lg bg-teal-800 text-base font-bold text-white transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="mt-5 h-11 w-full rounded-lg bg-teal-800 text-sm font-bold text-white transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:bg-slate-400"
             >
               {isSubmitting ? "Logging in..." : "Login"}
             </button>
           </form>
 
-          <div className="mt-10 space-y-5 text-center text-lg text-slate-800 sm:text-xl">
+          <div className="mt-4 space-y-2 text-center text-sm text-slate-800">
             <p>
               Need a verification check?{" "}
               <Link to="/hospital/register" className="font-medium text-teal-800">
@@ -160,21 +166,6 @@ export function LoginPage() {
           </div>
         </section>
       </main>
-
-      <footer className="border-t border-slate-200 px-4 py-8 text-sm text-slate-600 sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <p>&copy; {currentYear} Korede Medical Funding. Secure Blockchain Verified.</p>
-          <nav className="flex flex-wrap gap-x-6 gap-y-3">
-            {["Privacy Policy", "Terms of Service", "Cookie Policy", "Security Protocol"].map(
-              (item) => (
-                <a key={item} href="#" className="transition hover:text-teal-800">
-                  {item}
-                </a>
-              ),
-            )}
-          </nav>
-        </div>
-      </footer>
     </div>
   );
 }

@@ -25,12 +25,82 @@ import {
   type MedicalCase,
 } from "../lib/auth";
 
+type DashboardSection = "dashboard" | "progress" | "sharing" | "supporters";
+
 const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard },
-  { label: "Progress Hub", icon: Activity },
-  { label: "Sharing Toolkit", icon: Share2 },
-  { label: "Supporter Feed", icon: Users },
-];
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "progress", label: "Progress Hub", icon: Activity },
+  { key: "sharing", label: "Sharing Toolkit", icon: Share2 },
+  { key: "supporters", label: "Supporter Feed", icon: Users },
+] satisfies Array<{
+  key: DashboardSection;
+  label: string;
+  icon: typeof LayoutDashboard;
+}>;
+
+type DonationProgressCase = {
+  amount_raised_kobo: number;
+  bill_amount_kobo: number;
+  medical_case_id: string;
+  public_link: string;
+  public_slug: string;
+  remaining_amount_kobo: number;
+  status: string;
+  title: string;
+};
+
+type ProgressDonor = {
+  amount_kobo: number;
+  display_name: string;
+  id: string;
+  method: string;
+  paid_at: string;
+  sui_transaction_url: string;
+};
+
+type DonationProgress = {
+  case: DonationProgressCase;
+  donor_count: number;
+  donors: ProgressDonor[];
+  percentage_left: number;
+  percentage_paid: number;
+};
+
+const sectionCopy: Record<DashboardSection, { title: string; subtitle: string }> = {
+  dashboard: {
+    title: "Welcome back",
+    subtitle: "Here is the latest progress on your funding journey.",
+  },
+  progress: {
+    title: "Progress Hub",
+    subtitle: "Track the current open medical case and recent donation activity.",
+  },
+  sharing: {
+    title: "Sharing Toolkit",
+    subtitle: "Campaign sharing tools will appear here once a case is active.",
+  },
+  supporters: {
+    title: "Supporter Feed",
+    subtitle: "Supporter activity will appear here once donations begin.",
+  },
+};
+
+const placeholderSections: Record<Exclude<DashboardSection, "dashboard" | "progress">, {
+  icon: typeof Share2;
+  title: string;
+  body: string;
+}> = {
+  sharing: {
+    icon: Share2,
+    title: "Sharing toolkit is waiting for an active case",
+    body: "Once your medical case is linked, your public campaign link and sharing actions will be available here.",
+  },
+  supporters: {
+    icon: Users,
+    title: "Supporter feed is waiting for donations",
+    body: "Recent donor names, messages, and payment activity will show here when your campaign receives support.",
+  },
+};
 
 type PatientDeclaration = {
   created_at: string;
@@ -44,6 +114,8 @@ type DeclarationMode = "create" | "update";
 
 export function PatientDashboardPage() {
   const navigate = useNavigate();
+  const [activeSection, setActiveSection] =
+    useState<DashboardSection>("dashboard");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDeclarationOpen, setIsDeclarationOpen] = useState(false);
   const [declarationMode, setDeclarationMode] =
@@ -52,6 +124,11 @@ export function PatientDashboardPage() {
     null,
   );
   const [isLoadingDeclaration, setIsLoadingDeclaration] = useState(false);
+  const [donationProgress, setDonationProgress] =
+    useState<DonationProgress | null>(null);
+  const [isLoadingProgress, setIsLoadingProgress] = useState(false);
+  const [progressError, setProgressError] = useState("");
+  const [progressRequestCount, setProgressRequestCount] = useState(0);
   const session = useMemo(() => getPatientSession(), []);
 
   useEffect(() => {
@@ -113,6 +190,68 @@ export function PatientDashboardPage() {
     };
   }, [session]);
 
+  useEffect(() => {
+    if (activeSection !== "progress" || !session?.access_token) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadProgress = async () => {
+      setIsLoadingProgress(true);
+      setProgressError("");
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/patients/cases/current/donation-progress`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          },
+        );
+        const responseBody = await parseJsonResponse(response);
+
+        if (response.status === 404) {
+          if (isMounted) {
+            setDonationProgress(null);
+            setProgressError("Patient has no open medical case.");
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            getApiMessage(responseBody, "Unable to load donation progress."),
+          );
+        }
+
+        if (isMounted) {
+          setDonationProgress(parseDonationProgress(responseBody));
+        }
+      } catch (error) {
+        if (isMounted) {
+          setDonationProgress(null);
+          setProgressError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load donation progress.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingProgress(false);
+        }
+      }
+    };
+
+    void loadProgress();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeSection, progressRequestCount, session]);
+
   if (!session) {
     return <Navigate to="/login" replace />;
   }
@@ -123,6 +262,7 @@ export function PatientDashboardPage() {
     session.patient.first_name ||
     session.patient.full_name ||
     "Patient";
+  const currentSection = sectionCopy[activeSection];
 
   const logout = () => {
     clearPatientSession();
@@ -143,6 +283,7 @@ export function PatientDashboardPage() {
       />
       <PatientSidebar
         patientName={patientDisplayName}
+        activeSection={activeSection}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={logout}
@@ -151,6 +292,10 @@ export function PatientDashboardPage() {
         onOpenDeclaration={(mode) => {
           setDeclarationMode(mode);
           setIsDeclarationOpen(true);
+          setIsSidebarOpen(false);
+        }}
+        onSelectSection={(section) => {
+          setActiveSection(section);
           setIsSidebarOpen(false);
         }}
       />
@@ -173,25 +318,41 @@ export function PatientDashboardPage() {
         <main className="relative z-10 mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
           <div>
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl xl:text-5xl">
-              Welcome back, {patientDisplayName}
+              {activeSection === "dashboard"
+                ? `${currentSection.title}, ${patientDisplayName}`
+                : currentSection.title}
             </h1>
             <p className="mt-3 text-base leading-7 text-slate-600 sm:text-lg">
-              Here is the latest progress on your funding journey.
+              {currentSection.subtitle}
             </p>
           </div>
 
-          {activeCase ? (
-            <PatientCaseDashboard medicalCase={activeCase} />
-          ) : (
-            <NoMedicalCaseState
-              patientName={patientDisplayName}
-              declaration={declaration}
-              isLoadingDeclaration={isLoadingDeclaration}
-              onOpenDeclaration={(mode) => {
-                setDeclarationMode(mode);
-                setIsDeclarationOpen(true);
-              }}
+          {activeSection === "dashboard" &&
+            (activeCase ? (
+              <PatientCaseDashboard medicalCase={activeCase} />
+            ) : (
+              <NoMedicalCaseState
+                patientName={patientDisplayName}
+                declaration={declaration}
+                isLoadingDeclaration={isLoadingDeclaration}
+                onOpenDeclaration={(mode) => {
+                  setDeclarationMode(mode);
+                  setIsDeclarationOpen(true);
+                }}
+              />
+            ))}
+
+          {activeSection === "progress" && (
+            <ProgressHubSection
+              progress={donationProgress}
+              isLoading={isLoadingProgress}
+              errorMessage={progressError}
+              onRetry={() => setProgressRequestCount((count) => count + 1)}
             />
+          )}
+
+          {(activeSection === "sharing" || activeSection === "supporters") && (
+            <PlaceholderSection section={activeSection} />
           )}
         </main>
       </div>
@@ -213,22 +374,26 @@ export function PatientDashboardPage() {
 
 type PatientSidebarProps = {
   patientName: string;
+  activeSection: DashboardSection;
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
   hasDeclaration: boolean;
   isLoadingDeclaration: boolean;
   onOpenDeclaration: (mode: DeclarationMode) => void;
+  onSelectSection: (section: DashboardSection) => void;
 };
 
 function PatientSidebar({
   patientName,
+  activeSection,
   isOpen,
   onClose,
   onLogout,
   hasDeclaration,
   isLoadingDeclaration,
   onOpenDeclaration,
+  onSelectSection,
 }: PatientSidebarProps) {
   return (
     <>
@@ -271,12 +436,13 @@ function PatientSidebar({
         </div>
 
         <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-5 xl:py-6">
-          {navItems.map(({ label, icon: Icon }, index) => (
+          {navItems.map(({ key, label, icon: Icon }) => (
             <button
               key={label}
               type="button"
+              onClick={() => onSelectSection(key)}
               className={`flex w-full items-center gap-4 rounded-lg px-5 py-4 text-left text-sm font-semibold transition ${
-                index === 0
+                activeSection === key
                   ? "bg-teal-50 text-teal-900"
                   : "text-slate-700 hover:bg-slate-50 hover:text-teal-900"
               }`}
@@ -470,6 +636,203 @@ function PatientCaseDashboard({ medicalCase }: { medicalCase: MedicalCase }) {
   );
 }
 
+function ProgressHubSection({
+  progress,
+  isLoading,
+  errorMessage,
+  onRetry,
+}: {
+  progress: DonationProgress | null;
+  isLoading: boolean;
+  errorMessage: string;
+  onRetry: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+        <div className="h-6 w-40 rounded bg-slate-200" />
+        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          {[1, 2, 3].map((item) => (
+            <div key={item} className="rounded-xl border border-slate-200 p-5">
+              <div className="h-4 w-24 rounded bg-slate-200" />
+              <div className="mt-4 h-8 w-32 rounded bg-slate-100" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (errorMessage || !progress) {
+    return (
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-6 text-center shadow-sm sm:p-10">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Activity className="h-7 w-7" />
+        </div>
+        <h2 className="mt-5 text-2xl font-bold">No progress available</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
+          {errorMessage || "Donation progress will appear once a medical case is open."}
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-6 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
+        >
+          Refresh progress
+        </button>
+      </section>
+    );
+  }
+
+  const paidPercentage = Math.max(0, Math.min(progress.percentage_paid, 100));
+  const caseDetails = progress.case;
+
+  return (
+    <div className="mt-8 grid gap-5">
+      <section className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <span className="inline-flex rounded-full bg-teal-50 px-4 py-2 text-sm font-bold text-teal-800">
+              {caseDetails.status || "Current case"}
+            </span>
+            <h2 className="mt-5 break-words text-2xl font-bold sm:text-3xl">
+              {caseDetails.title || "Medical case"}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Case ID: {caseDetails.medical_case_id || "Unavailable"}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-teal-100 bg-teal-50 p-5 text-teal-950 lg:min-w-72">
+            <p className="text-sm font-bold">Funding progress</p>
+            <p className="mt-2 text-4xl font-bold">{paidPercentage}%</p>
+            <p className="mt-1 text-sm font-medium text-teal-800">
+              {progress.percentage_left}% left
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="h-4 overflow-hidden rounded-full bg-slate-200">
+            <div
+              className="h-full rounded-full bg-teal-700 transition-all"
+              style={{ width: `${paidPercentage}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 sm:grid-cols-3">
+          <ProgressStat
+            label="Raised"
+            value={formatNairaFromKobo(caseDetails.amount_raised_kobo)}
+          />
+          <ProgressStat
+            label="Goal"
+            value={formatNairaFromKobo(caseDetails.bill_amount_kobo)}
+          />
+          <ProgressStat
+            label="Remaining"
+            value={formatNairaFromKobo(caseDetails.remaining_amount_kobo)}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Recent donors</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {progress.donor_count} total donor{progress.donor_count === 1 ? "" : "s"}
+            </p>
+          </div>
+          {caseDetails.public_link && (
+            <a
+              href={caseDetails.public_link}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
+            >
+              View public link
+            </a>
+          )}
+        </div>
+
+        {progress.donors.length > 0 ? (
+          <div className="mt-6 grid gap-3">
+            {progress.donors.map((donor) => (
+              <article
+                key={donor.id || `${donor.display_name}-${donor.paid_at}`}
+                className="rounded-xl border border-slate-200 bg-white p-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">
+                      {donor.display_name || "Anonymous donor"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {formatProgressDate(donor.paid_at)}
+                      {donor.method ? ` · ${donor.method}` : ""}
+                    </p>
+                  </div>
+                  <p className="text-lg font-bold text-teal-800">
+                    {formatNairaFromKobo(donor.amount_kobo)}
+                  </p>
+                </div>
+                {donor.sui_transaction_url && (
+                  <a
+                    href={donor.sui_transaction_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex text-sm font-bold text-teal-800 hover:text-teal-950"
+                  >
+                    View transaction
+                  </a>
+                )}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-6 rounded-xl bg-slate-50 p-5 text-sm leading-6 text-slate-600">
+            No donations have been recorded for this case yet.
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ProgressStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <p className="text-sm font-semibold text-slate-600">{label}</p>
+      <p className="mt-2 break-words text-2xl font-bold text-slate-950">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function PlaceholderSection({
+  section,
+}: {
+  section: Exclude<DashboardSection, "dashboard" | "progress">;
+}) {
+  const placeholder = placeholderSections[section];
+  const Icon = placeholder.icon;
+
+  return (
+    <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-6 text-center shadow-sm sm:p-10">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-teal-50 text-teal-800">
+        <Icon className="h-7 w-7" />
+      </div>
+      <h2 className="mt-5 text-2xl font-bold">{placeholder.title}</h2>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
+        {placeholder.body}
+      </p>
+    </section>
+  );
+}
+
 function NoMedicalCaseState({
   patientName,
   declaration,
@@ -575,7 +938,7 @@ function DeclarationModal({
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/patients/declaration`, {
-        method: mode === "update" ? "PUT" : "POST",
+        method: mode === "update" ? "PATCH" : "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
@@ -699,6 +1062,80 @@ function parsePatientDeclaration(responseBody: unknown): PatientDeclaration {
     statement: body.statement,
     updated_at: body.updated_at ?? "",
   };
+}
+
+function parseDonationProgress(responseBody: unknown): DonationProgress {
+  if (!responseBody || typeof responseBody !== "object") {
+    throw new Error("Invalid donation progress response.");
+  }
+
+  const body = responseBody as Record<string, unknown>;
+  const caseBody =
+    body.case && typeof body.case === "object"
+      ? (body.case as Record<string, unknown>)
+      : null;
+
+  if (!caseBody) {
+    throw new Error("Invalid donation progress response.");
+  }
+
+  return {
+    case: {
+      amount_raised_kobo: getNumber(caseBody.amount_raised_kobo),
+      bill_amount_kobo: getNumber(caseBody.bill_amount_kobo),
+      medical_case_id: getString(caseBody.medical_case_id),
+      public_link: getString(caseBody.public_link),
+      public_slug: getString(caseBody.public_slug),
+      remaining_amount_kobo: getNumber(caseBody.remaining_amount_kobo),
+      status: getString(caseBody.status),
+      title: getString(caseBody.title),
+    },
+    donor_count: getNumber(body.donor_count),
+    donors: Array.isArray(body.donors)
+      ? body.donors.map((donor) => {
+          const donorBody =
+            donor && typeof donor === "object"
+              ? (donor as Record<string, unknown>)
+              : {};
+
+          return {
+            amount_kobo: getNumber(donorBody.amount_kobo),
+            display_name: getString(donorBody.display_name),
+            id: getString(donorBody.id),
+            method: getString(donorBody.method),
+            paid_at: getString(donorBody.paid_at),
+            sui_transaction_url: getString(donorBody.sui_transaction_url),
+          };
+        })
+      : [],
+    percentage_left: getNumber(body.percentage_left),
+    percentage_paid: getNumber(body.percentage_paid),
+  };
+}
+
+function getString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function getNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function formatProgressDate(value: string) {
+  if (!value) {
+    return "Recent";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 async function parseJsonResponse(response: Response) {

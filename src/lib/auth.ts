@@ -63,6 +63,7 @@ export type Hospital = {
   official_address: string;
   phone_number: string;
   updated_at: string;
+  verification_status?: string;
 };
 
 export type HospitalSession = {

@@ -1,5 +1,7 @@
 import {
   Activity,
+  AlertCircle,
+  BadgeCheck,
   Bell,
   Building2,
   CheckCircle2,
@@ -9,31 +11,43 @@ import {
   Filter,
   HelpCircle,
   History,
+  IdCard,
+  Landmark,
   LayoutDashboard,
   LogOut,
+  Mail,
   Menu,
+  Phone,
   PlusSquare,
+  RefreshCw,
   Search,
   ShieldCheck,
   SquareKanban,
+  UserRound,
   WalletCards,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { BrandLogo } from "../components/BrandLogo";
+import { API_BASE_URL } from "../config/api";
 import {
   clearHospitalSession,
   getHospitalSession,
+  type Hospital,
 } from "../lib/auth";
 
 const navItems = [
-  { label: "Overview", icon: LayoutDashboard, active: true },
-  { label: "Active Cases", icon: SquareKanban },
-  { label: "Completed Cases", icon: CheckCircle2 },
-  { label: "Settlement History", icon: History },
-  { label: "Hospital Profile", icon: PlusSquare },
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "create-case", label: "Create Medical Case", icon: PlusSquare },
+  { id: "active-cases", label: "Active Cases", icon: SquareKanban },
+  { id: "completed-cases", label: "Completed Cases", icon: CheckCircle2 },
+  { id: "settlement-history", label: "Settlement History", icon: History },
+  { id: "hospital-profile", label: "Hospital Profile", icon: UserRound },
 ];
+
+type HospitalDashboardView = (typeof navItems)[number]["id"];
 
 const metrics = [
   {
@@ -102,7 +116,64 @@ const chartPoints = [
 export function HospitalDashboardPage() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeView, setActiveView] =
+    useState<HospitalDashboardView>("overview");
+  const [hospitalProfile, setHospitalProfile] = useState<Hospital | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
   const session = getHospitalSession();
+  const accessToken = session?.access_token;
+
+  useEffect(() => {
+    if (!accessToken || activeView !== "hospital-profile" || hospitalProfile) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadHospitalProfile() {
+      setIsProfileLoading(true);
+      setProfileError("");
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/hospitals/me`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(
+            data?.message || "Unable to load the hospital profile.",
+          );
+        }
+
+        if (isMounted) {
+          setHospitalProfile(data as Hospital);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setProfileError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load the hospital profile.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsProfileLoading(false);
+        }
+      }
+    }
+
+    void loadHospitalProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, activeView, hospitalProfile]);
 
   if (!session) {
     return <Navigate to="/login" replace />;
@@ -124,8 +195,13 @@ export function HospitalDashboardPage() {
         hospitalName={hospitalName}
         shortHospitalName={shortHospitalName}
         isOpen={isSidebarOpen}
+        activeView={activeView}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={logout}
+        onNavigate={(view) => {
+          setActiveView(view);
+          setIsSidebarOpen(false);
+        }}
       />
 
       <div className="min-w-0">
@@ -179,53 +255,19 @@ export function HospitalDashboardPage() {
         </header>
 
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Hospital Dashboard
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-slate-600 sm:text-base">
-              Real-time overview of active fundraising cases and financial
-              settlements.
-            </p>
-          </div>
-
-          <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {metrics.map(({ label, value, delta, icon: Icon, accent }) => (
-              <article
-                key={label}
-                className={`rounded-xl border border-slate-200 border-t-4 ${accent} bg-white p-5 shadow-sm`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  {delta && (
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold ${
-                        delta.includes("Action")
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-teal-50 text-teal-800"
-                      }`}
-                    >
-                      {delta}
-                    </span>
-                  )}
-                </div>
-                <p className="mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">
-                  {label}
-                </p>
-                <p className="mt-2 break-words text-3xl font-bold">{value}</p>
-              </article>
-            ))}
-          </section>
-
-          <section className="mt-6 grid gap-5 xl:grid-cols-[1fr_340px]">
-            <ActiveCasesPanel />
-            <aside className="grid gap-5">
-              <FundingVelocityPanel />
-              <TrustLedgerCard hospitalName={shortHospitalName} />
-            </aside>
-          </section>
+          {activeView === "hospital-profile" ? (
+            <HospitalProfileView
+              hospital={hospitalProfile}
+              isLoading={isProfileLoading}
+              error={profileError}
+              onRetry={() => {
+                setHospitalProfile(null);
+                setProfileError("");
+              }}
+            />
+          ) : (
+            <OverviewView shortHospitalName={shortHospitalName} />
+          )}
         </main>
       </div>
     </div>
@@ -236,14 +278,18 @@ function HospitalSidebar({
   hospitalName,
   shortHospitalName,
   isOpen,
+  activeView,
   onClose,
   onLogout,
+  onNavigate,
 }: {
   hospitalName: string;
   shortHospitalName: string;
   isOpen: boolean;
+  activeView: HospitalDashboardView;
   onClose: () => void;
   onLogout: () => void;
+  onNavigate: (view: HospitalDashboardView) => void;
 }) {
   return (
     <>
@@ -260,16 +306,8 @@ function HospitalSidebar({
         }`}
       >
         <div className="flex h-20 items-center justify-between px-5">
-          <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-700 text-white">
-              <PlusSquare className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="font-bold text-teal-800">Korede</p>
-              <p className="text-xs font-medium text-slate-500">
-                Command Center
-              </p>
-            </div>
+          <div className="min-w-0">
+            <BrandLogo />
           </div>
           <button
             type="button"
@@ -282,12 +320,13 @@ function HospitalSidebar({
         </div>
 
         <nav className="flex-1 space-y-1 px-3 py-3">
-          {navItems.map(({ label, icon: Icon, active }) => (
+          {navItems.map(({ id, label, icon: Icon }) => (
             <button
               key={label}
               type="button"
+              onClick={() => onNavigate(id)}
               className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-sm font-semibold transition ${
-                active
+                activeView === id
                   ? "bg-teal-50 text-teal-800"
                   : "text-slate-600 hover:bg-slate-50 hover:text-teal-800"
               }`}
@@ -322,6 +361,315 @@ function HospitalSidebar({
       </aside>
     </>
   );
+}
+
+function OverviewView({ shortHospitalName }: { shortHospitalName: string }) {
+  return (
+    <>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+          Hospital Dashboard
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-slate-600 sm:text-base">
+          Real-time overview of active fundraising cases and financial
+          settlements.
+        </p>
+      </div>
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map(({ label, value, delta, icon: Icon, accent }) => (
+          <article
+            key={label}
+            className={`rounded-xl border border-slate-200 border-t-4 ${accent} bg-white p-5 shadow-sm`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
+                <Icon className="h-5 w-5" />
+              </span>
+              {delta && (
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    delta.includes("Action")
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-teal-50 text-teal-800"
+                  }`}
+                >
+                  {delta}
+                </span>
+              )}
+            </div>
+            <p className="mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">
+              {label}
+            </p>
+            <p className="mt-2 break-words text-3xl font-bold">{value}</p>
+          </article>
+        ))}
+      </section>
+
+      <section className="mt-6 grid gap-5 xl:grid-cols-[1fr_340px]">
+        <ActiveCasesPanel />
+        <aside className="grid gap-5">
+          <FundingVelocityPanel />
+          <TrustLedgerCard hospitalName={shortHospitalName} />
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function HospitalProfileView({
+  hospital,
+  isLoading,
+  error,
+  onRetry,
+}: {
+  hospital: Hospital | null;
+  isLoading: boolean;
+  error: string;
+  onRetry: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3 text-slate-700">
+          <RefreshCw className="h-5 w-5 animate-spin text-teal-700" />
+          <span className="text-sm font-bold">Loading hospital profile...</span>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="rounded-xl border border-red-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-700">
+              <AlertCircle className="h-5 w-5" />
+            </span>
+            <div>
+              <h1 className="text-2xl font-bold">Hospital Profile</h1>
+              <p className="mt-1 text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-800"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (!hospital) {
+    return null;
+  }
+
+  const profileSections = [
+    {
+      title: "Contact Information",
+      icon: Phone,
+      items: [
+        { label: "Email", value: hospital.email, icon: Mail },
+        { label: "Phone Number", value: hospital.phone_number, icon: Phone },
+        {
+          label: "Official Address",
+          value: hospital.official_address,
+          icon: Building2,
+        },
+      ],
+    },
+    {
+      title: "Registration Details",
+      icon: IdCard,
+      items: [
+        {
+          label: "CAC Registration Number",
+          value: hospital.cac_registration_number,
+          icon: IdCard,
+        },
+        {
+          label: "Medical License Number",
+          value: hospital.medical_license_number,
+          icon: BadgeCheck,
+        },
+        {
+          label: "Administrator",
+          value: hospital.administrator_name,
+          icon: UserRound,
+        },
+      ],
+    },
+    {
+      title: "Settlement Account",
+      icon: Landmark,
+      items: [
+        { label: "Bank Name", value: hospital.bank_name, icon: Landmark },
+        {
+          label: "Corporate Account Name",
+          value: hospital.corporate_account_name,
+          icon: WalletCards,
+        },
+        {
+          label: "Corporate Account Number",
+          value: hospital.corporate_account_number,
+          icon: WalletCards,
+        },
+      ],
+    },
+  ];
+
+  return (
+    <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide text-teal-700">
+            Hospital Profile
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+            {hospital.name}
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+            Verified hospital account details used for case creation, patient
+            verification, and settlement processing.
+          </p>
+        </div>
+        <span
+          className={`inline-flex w-fit items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${
+            hospital.email_verified
+              ? "bg-teal-50 text-teal-800"
+              : "bg-amber-100 text-amber-800"
+          }`}
+        >
+          <BadgeCheck className="h-4 w-4" />
+          {hospital.verification_status || "Profile active"}
+        </span>
+      </div>
+
+      <section className="mt-6 grid gap-4 md:grid-cols-3">
+        <ProfileSummaryCard
+          label="Email Status"
+          value={hospital.email_verified ? "Verified" : "Not verified"}
+          detail={formatDate(hospital.email_verified_at)}
+          icon={BadgeCheck}
+        />
+        <ProfileSummaryCard
+          label="Dashboard Access"
+          value={hospital.dashboard_access || "Enabled"}
+          detail="Hospital workspace"
+          icon={LayoutDashboard}
+        />
+        <ProfileSummaryCard
+          label="Hospital ID"
+          value={hospital.id}
+          detail="Current account"
+          icon={IdCard}
+        />
+      </section>
+
+      <section className="mt-6 grid gap-5 xl:grid-cols-3">
+        {profileSections.map(({ title, icon: SectionIcon, items }) => (
+          <article
+            key={title}
+            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
+                <SectionIcon className="h-5 w-5" />
+              </span>
+              <h2 className="text-lg font-bold">{title}</h2>
+            </div>
+            <dl className="mt-5 space-y-5">
+              {items.map(({ label, value, icon: ItemIcon }) => (
+                <div key={label} className="flex gap-3">
+                  <ItemIcon className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
+                  <div className="min-w-0">
+                    <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                      {label}
+                    </dt>
+                    <dd className="mt-1 break-words text-sm font-semibold text-slate-900">
+                      {value || "Not provided"}
+                    </dd>
+                  </div>
+                </div>
+              ))}
+            </dl>
+          </article>
+        ))}
+      </section>
+
+      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-bold">System Record</h2>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <ProfileMeta label="Created" value={formatDate(hospital.created_at)} />
+          <ProfileMeta label="Last Updated" value={formatDate(hospital.updated_at)} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProfileSummaryCard({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: typeof Activity;
+}) {
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {label}
+          </p>
+          <p className="mt-2 break-words text-xl font-bold text-slate-950">
+            {value}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">{detail}</p>
+        </div>
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function ProfileMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function formatDate(value?: string) {
+  if (!value) {
+    return "Not available";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function ActiveCasesPanel() {

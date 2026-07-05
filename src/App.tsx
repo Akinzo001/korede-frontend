@@ -1,6 +1,7 @@
 import { Toaster } from "sonner";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { HospitalRegistrationPage } from "./pages/HospitalRegistrationPage";
+import { HospitalDashboardPage } from "./pages/HospitalDashboardPage";
 import { LandingPage } from "./pages/LandingPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OtpVerificationPage } from "./pages/OtpVerificationPage";
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/hospital/register" element={<HospitalRegistrationPage />} />
           <Route path="/hospital/verify-email" element={<OtpVerificationPage />} />
+          <Route path="/hospital/dashboard" element={<HospitalDashboardPage />} />
           <Route path="/patient/register" element={<PatientRegistrationPage />} />
           <Route path="/patient/verify-email" element={<PatientOtpVerificationPage />} />
           <Route path="/patient/dashboard" element={<PatientDashboardPage />} />

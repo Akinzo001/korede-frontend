@@ -46,7 +46,39 @@ export type LoginResponse = {
   token_type: string;
 };
 
+export type Hospital = {
+  administrator_name: string;
+  bank_name: string;
+  cac_registration_number: string;
+  corporate_account_name: string;
+  corporate_account_number: string;
+  created_at: string;
+  dashboard_access?: string;
+  email: string;
+  email_verified: boolean;
+  email_verified_at: string;
+  id: string;
+  medical_license_number: string;
+  name: string;
+  official_address: string;
+  phone_number: string;
+  updated_at: string;
+};
+
+export type HospitalSession = {
+  access_token: string;
+  email: string;
+  expires_in: number;
+  hospital: Hospital;
+  message: string;
+  refresh_expires_in: number;
+  refresh_token: string;
+  role: string;
+  token_type: string;
+};
+
 const patientSessionKey = "korede_patient_session";
+const hospitalSessionKey = "korede_hospital_session";
 
 export function savePatientSession(session: LoginResponse) {
   localStorage.setItem(patientSessionKey, JSON.stringify(session));
@@ -69,6 +101,29 @@ export function getPatientSession() {
 
 export function clearPatientSession() {
   localStorage.removeItem(patientSessionKey);
+}
+
+export function saveHospitalSession(session: HospitalSession) {
+  localStorage.setItem(hospitalSessionKey, JSON.stringify(session));
+}
+
+export function getHospitalSession() {
+  const rawSession = localStorage.getItem(hospitalSessionKey);
+
+  if (!rawSession) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawSession) as HospitalSession;
+  } catch {
+    localStorage.removeItem(hospitalSessionKey);
+    return null;
+  }
+}
+
+export function clearHospitalSession() {
+  localStorage.removeItem(hospitalSessionKey);
 }
 
 export function formatNairaFromKobo(amountKobo: number) {

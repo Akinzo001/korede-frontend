@@ -2,6 +2,7 @@ import {
   ArrowRight,
   ArrowLeft,
   BriefcaseMedical,
+  Eye,
   EyeOff,
   Landmark,
   LayoutDashboard,
@@ -13,6 +14,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
+import type { Hospital } from "../lib/auth";
 
 const benefits = [
   {
@@ -220,6 +222,7 @@ export function HospitalRegistrationPage() {
         state: {
           email: formData.email.trim(),
           otpExpiresInSeconds: successResponse.otp_expires_in_seconds,
+          hospital: getRegisteredHospital(responseBody, formData),
         },
       });
     } catch (error) {
@@ -454,6 +457,48 @@ function getRegistrationSuccessResponse(
       typeof body.otp_expires_in_seconds === "number"
         ? body.otp_expires_in_seconds
         : undefined,
+  };
+}
+
+function getRegisteredHospital(
+  responseBody: unknown,
+  formData: RegistrationFormState,
+): Hospital {
+  const body =
+    responseBody && typeof responseBody === "object"
+      ? (responseBody as Record<string, unknown>)
+      : null;
+  const hospital =
+    body?.hospital && typeof body.hospital === "object"
+      ? (body.hospital as Partial<Hospital>)
+      : {};
+
+  return {
+    administrator_name:
+      hospital.administrator_name ?? formData.administrator_name.trim(),
+    bank_name: hospital.bank_name ?? formData.bank_name.trim(),
+    cac_registration_number:
+      hospital.cac_registration_number ??
+      formData.cac_registration_number.trim(),
+    corporate_account_name:
+      hospital.corporate_account_name ??
+      formData.corporate_account_name.trim(),
+    corporate_account_number:
+      hospital.corporate_account_number ??
+      formData.corporate_account_number.trim(),
+    created_at: hospital.created_at ?? "",
+    email: hospital.email ?? formData.email.trim(),
+    email_verified: hospital.email_verified ?? false,
+    email_verified_at: hospital.email_verified_at ?? "",
+    id: hospital.id ?? "",
+    medical_license_number:
+      hospital.medical_license_number ??
+      formData.medical_license_number.trim(),
+    name: hospital.name ?? formData.name.trim(),
+    official_address:
+      hospital.official_address ?? formData.official_address.trim(),
+    phone_number: hospital.phone_number ?? formData.phone_number.trim(),
+    updated_at: hospital.updated_at ?? "",
   };
 }
 
@@ -788,10 +833,12 @@ type PasswordInputProps = {
 };
 
 function PasswordInput({ value, onChange }: PasswordInputProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <div className="relative">
       <input
-        type="password"
+        type={showPassword ? "text" : "password"}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Enter a secure password"
@@ -799,10 +846,16 @@ function PasswordInput({ value, onChange }: PasswordInputProps) {
       />
       <button
         type="button"
-        aria-label="Show password"
+        onClick={() => setShowPassword((isVisible) => !isVisible)}
+        aria-label={showPassword ? "Hide password" : "Show password"}
+        aria-pressed={showPassword}
         className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-teal-800"
       >
-        <EyeOff className="h-5 w-5" />
+        {showPassword ? (
+          <EyeOff className="h-5 w-5" />
+        ) : (
+          <Eye className="h-5 w-5" />
+        )}
       </button>
     </div>
   );

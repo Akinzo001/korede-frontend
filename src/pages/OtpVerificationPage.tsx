@@ -1,16 +1,23 @@
 import { ArrowRight, MailCheck, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { API_BASE_URL } from "../config/api";
+import {
+  saveHospitalSession,
+  type Hospital,
+  type HospitalSession,
+} from "../lib/auth";
 
 type VerificationLocationState = {
   email?: string;
   otpExpiresInSeconds?: number;
+  hospital?: Hospital;
 };
 
 export function OtpVerificationPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const state = location.state as VerificationLocationState | null;
   const email = state?.email ?? "";
   const [secondsRemaining, setSecondsRemaining] = useState(
@@ -75,7 +82,15 @@ export function OtpVerificationPage() {
         "Hospital email verified successfully. You can now sign in.";
 
       setStatusMessage(message);
+      saveHospitalSession(
+        buildVerifiedHospitalSession(
+          responseBody,
+          email.trim(),
+          state?.hospital,
+        ),
+      );
       toast.success(message);
+      navigate("/hospital/dashboard", { replace: true });
     } catch (error) {
       setStatusType("error");
       const message =
@@ -186,4 +201,53 @@ function formatCountdown(totalSeconds: number) {
   const seconds = totalSeconds % 60;
 
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function buildVerifiedHospitalSession(
+  responseBody: unknown,
+  email: string,
+  fallbackHospital?: Hospital,
+): HospitalSession {
+  const body =
+    responseBody && typeof responseBody === "object"
+      ? (responseBody as Partial<HospitalSession>)
+      : {};
+  const hospital =
+    body.hospital ?? fallbackHospital ?? buildFallbackHospital(email);
+
+  return {
+    access_token: body.access_token ?? "",
+    email: body.email ?? hospital.email,
+    expires_in: body.expires_in ?? 0,
+    hospital: {
+      ...hospital,
+      email_verified: true,
+      email_verified_at: hospital.email_verified_at || new Date().toISOString(),
+    },
+    message: body.message ?? "Hospital email verified successfully.",
+    refresh_expires_in: body.refresh_expires_in ?? 0,
+    refresh_token: body.refresh_token ?? "",
+    role: body.role ?? "hospital",
+    token_type: body.token_type ?? "Bearer",
+  };
+}
+
+function buildFallbackHospital(email: string): Hospital {
+  return {
+    administrator_name: "",
+    bank_name: "",
+    cac_registration_number: "",
+    corporate_account_name: "",
+    corporate_account_number: "",
+    created_at: "",
+    email,
+    email_verified: true,
+    email_verified_at: new Date().toISOString(),
+    id: "",
+    medical_license_number: "",
+    name: "Hospital",
+    official_address: "",
+    phone_number: "",
+    updated_at: "",
+  };
 }

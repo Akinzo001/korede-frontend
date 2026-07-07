@@ -8,6 +8,7 @@ import { OtpVerificationPage } from "./pages/OtpVerificationPage";
 import { PatientRegistrationPage } from "./pages/PatientRegistrationPage";
 import { PatientOtpVerificationPage } from "./pages/PatientOtpVerificationPage";
 import { PatientDashboardPage } from "./pages/PatientDashboardPage";
+import { PublicCasePage } from "./pages/PublicCasePage";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/patient/register" element={<PatientRegistrationPage />} />
           <Route path="/patient/verify-email" element={<PatientOtpVerificationPage />} />
           <Route path="/patient/dashboard" element={<PatientDashboardPage />} />
+          <Route path="/cases/:publicSlug" element={<PublicCasePage />} />
         </Routes>
       </BrowserRouter>
       <Toaster richColors position="top-right" />

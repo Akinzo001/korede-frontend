@@ -4,10 +4,12 @@ import {
   BadgeCheck,
   Bell,
   Building2,
+  Calendar,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   FileClock,
+  FileText,
   Filter,
   HelpCircle,
   History,
@@ -18,16 +20,20 @@ import {
   Mail,
   Menu,
   Phone,
+  PlusCircle,
   PlusSquare,
   RefreshCw,
   Search,
+  Send,
   ShieldCheck,
   SquareKanban,
+  Trash2,
+  Upload,
   UserRound,
   WalletCards,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BrandLogo } from "../components/BrandLogo";
@@ -48,6 +54,42 @@ const navItems = [
 ];
 
 type HospitalDashboardView = (typeof navItems)[number]["id"];
+
+type PatientLookup = {
+  can_create_case: boolean;
+  declaration?: {
+    created_at?: string;
+    exists?: boolean;
+    statement?: string;
+  };
+  patient: {
+    email_verified: boolean;
+    first_name: string;
+    id: string;
+    last_name: string;
+    username: string;
+  };
+};
+
+type PatientDeclaration = {
+  created_at: string;
+  id: string;
+  patient_id: string;
+  statement: string;
+  updated_at: string;
+};
+
+type BillingItemForm = {
+  description: string;
+  amount: string;
+};
+
+type CaseDocument = {
+  content_base64: string;
+  document_type: string;
+  name: string;
+  original_filename: string;
+};
 
 const metrics = [
   {
@@ -179,7 +221,7 @@ export function HospitalDashboardPage() {
     return <Navigate to="/login" replace />;
   }
 
-  const hospitalName = session.hospital.name || "Hospital";
+  const hospitalName = session.hospital?.name || session.email || "Hospital";
   const shortHospitalName =
     hospitalName.length > 18 ? `${hospitalName.slice(0, 18)}...` : hospitalName;
 
@@ -265,6 +307,8 @@ export function HospitalDashboardPage() {
                 setProfileError("");
               }}
             />
+          ) : activeView === "create-case" ? (
+            <CreateMedicalCaseView accessToken={session.access_token} />
           ) : (
             <OverviewView shortHospitalName={shortHospitalName} />
           )}
@@ -414,6 +458,500 @@ function OverviewView({ shortHospitalName }: { shortHospitalName: string }) {
         </aside>
       </section>
     </>
+  );
+}
+
+function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
+  const [username, setUsername] = useState("");
+  const [lookup, setLookup] = useState<PatientLookup | null>(null);
+  const [declaration, setDeclaration] = useState<PatientDeclaration | null>(
+    null,
+  );
+  const [lookupError, setLookupError] = useState("");
+  const [isLookupLoading, setIsLookupLoading] = useState(false);
+  const [title, setTitle] = useState("");
+  const [diagnosisSummary, setDiagnosisSummary] = useState("");
+  const [admittedAt, setAdmittedAt] = useState("");
+  const [billingItems, setBillingItems] = useState<BillingItemForm[]>([
+    { description: "", amount: "" },
+  ]);
+  const [documents, setDocuments] = useState<CaseDocument[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const canShowCaseForm = lookup?.can_create_case && declaration;
+  const patientName = lookup
+    ? `${lookup.patient.first_name} ${lookup.patient.last_name}`.trim()
+    : "";
+
+  async function lookupPatient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const trimmedUsername = username.trim();
+
+    if (!trimmedUsername) {
+      setLookupError("Enter the patient username.");
+      return;
+    }
+
+    setIsLookupLoading(true);
+    setLookupError("");
+    setLookup(null);
+    setDeclaration(null);
+
+    try {
+      const patientResponse = await fetch(
+        `${API_BASE_URL}/api/v1/hospitals/patients/${encodeURIComponent(
+          trimmedUsername,
+        )}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+      const patientData = await patientResponse.json().catch(() => null);
+
+      if (!patientResponse.ok) {
+        throw new Error(patientData?.message || "Patient was not found.");
+      }
+
+      const lookupResult = patientData as PatientLookup;
+      setLookup(lookupResult);
+
+      if (!lookupResult.can_create_case) {
+        setLookupError(
+          "This patient cannot have a new medical case created right now.",
+        );
+        return;
+      }
+
+      const declarationResponse = await fetch(
+        `${API_BASE_URL}/api/v1/hospitals/patients/${encodeURIComponent(
+          trimmedUsername,
+        )}/declaration`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+      const declarationData = await declarationResponse
+        .json()
+        .catch(() => null);
+
+      if (!declarationResponse.ok) {
+        throw new Error(
+          declarationData?.message || "Patient declaration was not found.",
+        );
+      }
+
+      setDeclaration(declarationData as PatientDeclaration);
+    } catch (error) {
+      setLookupError(getErrorMessage(error, "Unable to prepare this case."));
+    } finally {
+      setIsLookupLoading(false);
+    }
+  }
+
+  function updateBillingItem(
+    index: number,
+    field: keyof BillingItemForm,
+    value: string,
+  ) {
+    setBillingItems((currentItems) =>
+      currentItems.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item,
+      ),
+    );
+  }
+
+  function addBillingItem() {
+    setBillingItems((currentItems) => [
+      ...currentItems,
+      { description: "", amount: "" },
+    ]);
+  }
+
+  function removeBillingItem(index: number) {
+    setBillingItems((currentItems) =>
+      currentItems.length === 1
+        ? currentItems
+        : currentItems.filter((_, itemIndex) => itemIndex !== index),
+    );
+  }
+
+  async function handleDocumentUpload(files: FileList | null) {
+    if (!files?.length) {
+      return;
+    }
+
+    try {
+      const uploadedDocuments = await Promise.all(
+        Array.from(files).map(readDocumentFile),
+      );
+      setDocuments((currentDocuments) => [
+        ...currentDocuments,
+        ...uploadedDocuments,
+      ]);
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Unable to read selected document."));
+    }
+  }
+
+  function removeDocument(index: number) {
+    setDocuments((currentDocuments) =>
+      currentDocuments.filter((_, documentIndex) => documentIndex !== index),
+    );
+  }
+
+  async function submitCase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!lookup || !declaration) {
+      toast.error("Lookup a patient and review their declaration first.");
+      return;
+    }
+
+    const preparedBillingItems = billingItems
+      .map((item) => ({
+        description: item.description.trim(),
+        amount_kobo: Math.round(Number(item.amount) * 100),
+      }))
+      .filter((item) => item.description && item.amount_kobo > 0);
+
+    if (!title.trim() || !diagnosisSummary.trim() || !admittedAt) {
+      toast.error("Complete the case title, diagnosis summary, and admission date.");
+      return;
+    }
+
+    if (!preparedBillingItems.length) {
+      toast.error("Add at least one valid billing item.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/hospitals/cases`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          admitted_at: new Date(admittedAt).toISOString(),
+          billing_items: preparedBillingItems,
+          diagnosis_summary: diagnosisSummary.trim(),
+          documents,
+          patient_username: lookup.patient.username,
+          title: title.trim(),
+        }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to create medical case.");
+      }
+
+      toast.success("Medical case created successfully.");
+      setTitle("");
+      setDiagnosisSummary("");
+      setAdmittedAt("");
+      setBillingItems([{ description: "", amount: "" }]);
+      setDocuments([]);
+      setLookup(null);
+      setDeclaration(null);
+      setUsername("");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Unable to create medical case."));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide text-teal-700">
+            Case Creation
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
+            Create Medical Case
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+            Confirm the patient by username, review their declaration, then
+            publish the verified medical case details.
+          </p>
+        </div>
+      </div>
+
+      <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <form
+          onSubmit={lookupPatient}
+          className="grid gap-4 lg:grid-cols-[1fr_auto]"
+        >
+          <label className="block">
+            <span className="text-sm font-bold text-slate-800">
+              Patient username
+            </span>
+            <input
+              type="text"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Enter patient username"
+              className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-sm font-semibold outline-none transition placeholder:font-medium placeholder:text-slate-400 focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={isLookupLoading}
+            className="inline-flex h-12 items-center justify-center gap-2 self-end rounded-lg bg-teal-700 px-5 text-sm font-bold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isLookupLoading ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+            Check patient
+          </button>
+        </form>
+
+        {lookupError && (
+          <div className="mt-4 flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{lookupError}</p>
+          </div>
+        )}
+      </section>
+
+      {lookup && (
+        <section className="mt-6 grid gap-5 xl:grid-cols-[360px_1fr]">
+          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-teal-900 text-sm font-bold text-white">
+                {lookup.patient.first_name.slice(0, 1)}
+                {lookup.patient.last_name.slice(0, 1)}
+              </span>
+              <div className="min-w-0">
+                <h2 className="break-words text-xl font-bold">{patientName}</h2>
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  @{lookup.patient.username}
+                </p>
+              </div>
+            </div>
+            <dl className="mt-6 space-y-4">
+              <ProfileMeta label="Patient ID" value={lookup.patient.id} />
+              <ProfileMeta
+                label="Email Status"
+                value={lookup.patient.email_verified ? "Verified" : "Not verified"}
+              />
+              <ProfileMeta
+                label="Case Eligibility"
+                value={lookup.can_create_case ? "Can create case" : "Blocked"}
+              />
+            </dl>
+          </article>
+
+          <article className="rounded-xl border border-teal-100 bg-teal-50/60 p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-teal-800">
+                <FileText className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-xl font-bold">Patient Declaration</h2>
+                <p className="text-sm font-semibold text-slate-500">
+                  Read-only patient statement
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 rounded-lg border border-teal-100 bg-white p-4">
+              <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">
+                {declaration?.statement ||
+                  lookup.declaration?.statement ||
+                  "No declaration loaded yet."}
+              </p>
+            </div>
+          </article>
+        </section>
+      )}
+
+      {canShowCaseForm && (
+        <form
+          onSubmit={submitCase}
+          className="mt-6 grid gap-5 xl:grid-cols-[1fr_360px]"
+        >
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
+              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
+                <PlusCircle className="h-5 w-5" />
+              </span>
+              <h2 className="text-xl font-bold">Medical Case Details</h2>
+            </div>
+
+            <div className="mt-5 grid gap-5">
+              <label className="block">
+                <span className="text-sm font-bold text-slate-800">
+                  Case title
+                </span>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(event) => setTitle(event.target.value)}
+                  placeholder="e.g. Emergency cardiac surgery support"
+                  className="mt-2 h-12 w-full rounded-lg border border-slate-200 px-4 text-sm outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-800">
+                  Diagnosis summary
+                </span>
+                <textarea
+                  value={diagnosisSummary}
+                  onChange={(event) => setDiagnosisSummary(event.target.value)}
+                  rows={5}
+                  placeholder="Summarize the diagnosis and care plan."
+                  className="mt-2 w-full resize-none rounded-lg border border-slate-200 px-4 py-3 text-sm leading-6 outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-800">
+                  Admission date
+                </span>
+                <div className="relative mt-2">
+                  <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="datetime-local"
+                    value={admittedAt}
+                    onChange={(event) => setAdmittedAt(event.target.value)}
+                    className="h-12 w-full rounded-lg border border-slate-200 pl-10 pr-4 text-sm outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                  />
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <aside className="grid gap-5">
+            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold">Billing Items</h2>
+                <button
+                  type="button"
+                  onClick={addBillingItem}
+                  className="inline-flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-2 text-sm font-bold text-teal-800"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  Add
+                </button>
+              </div>
+              <div className="mt-4 space-y-4">
+                {billingItems.map((item, index) => (
+                  <div
+                    key={index}
+                    className="rounded-lg border border-slate-100 bg-slate-50 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold">
+                        Item {index + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeBillingItem(index)}
+                        disabled={billingItems.length === 1}
+                        aria-label="Remove billing item"
+                        className="rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={item.description}
+                      onChange={(event) =>
+                        updateBillingItem(index, "description", event.target.value)
+                      }
+                      placeholder="Description"
+                      className="mt-3 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.amount}
+                      onChange={(event) =>
+                        updateBillingItem(index, "amount", event.target.value)
+                      }
+                      placeholder="Amount in naira"
+                      className="mt-3 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-bold">Documents</h2>
+              <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition hover:border-teal-300 hover:bg-teal-50/40">
+                <Upload className="h-6 w-6 text-teal-800" />
+                <span className="mt-2 text-sm font-bold text-slate-800">
+                  Upload case documents
+                </span>
+                <span className="mt-1 text-xs text-slate-500">
+                  PDF, JPG, PNG, or DOC files
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    void handleDocumentUpload(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+
+              {documents.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {documents.map((document, index) => (
+                    <div
+                      key={`${document.original_filename}-${index}`}
+                      className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"
+                    >
+                      <span className="min-w-0 truncate text-sm font-semibold">
+                        {document.original_filename}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeDocument(index)}
+                        aria-label="Remove document"
+                        className="rounded-lg p-2 text-slate-500 hover:bg-white hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 text-sm font-bold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSubmitting ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Submit medical case
+            </button>
+          </aside>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -670,6 +1208,52 @@ function formatDate(value?: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function readDocumentFile(file: File) {
+  return new Promise<CaseDocument>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const [, contentBase64 = ""] = result.split(",");
+
+      resolve({
+        content_base64: contentBase64,
+        document_type: getDocumentType(file),
+        name: file.name.replace(/\.[^/.]+$/, "") || file.name,
+        original_filename: file.name,
+      });
+    };
+
+    reader.onerror = () => {
+      reject(new Error("Unable to read selected document."));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+function getDocumentType(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase();
+
+  if (file.type.includes("pdf") || extension === "pdf") {
+    return "pdf";
+  }
+
+  if (file.type.includes("image") || ["jpg", "jpeg", "png"].includes(extension || "")) {
+    return "image";
+  }
+
+  if (["doc", "docx"].includes(extension || "")) {
+    return "document";
+  }
+
+  return extension || "document";
 }
 
 function ActiveCasesPanel() {

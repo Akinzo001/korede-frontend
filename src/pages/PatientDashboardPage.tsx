@@ -1,11 +1,14 @@
 import {
   Activity,
+  Copy,
+  ExternalLink,
   Heart,
   LayoutDashboard,
   Link as LinkIcon,
   LogOut,
   Menu,
   MessageSquareText,
+  MessageCircle,
   Send,
   Settings,
   Share2,
@@ -66,6 +69,15 @@ type DonationProgress = {
   percentage_paid: number;
 };
 
+type ShareLinkDetails = {
+  medical_case_id: string;
+  message: string;
+  public_link: string;
+  public_slug: string;
+  share_url: string;
+  title: string;
+};
+
 const sectionCopy: Record<DashboardSection, { title: string; subtitle: string }> = {
   dashboard: {
     title: "Welcome back",
@@ -85,16 +97,11 @@ const sectionCopy: Record<DashboardSection, { title: string; subtitle: string }>
   },
 };
 
-const placeholderSections: Record<Exclude<DashboardSection, "dashboard" | "progress">, {
+const placeholderSections: Record<Exclude<DashboardSection, "dashboard" | "progress" | "sharing">, {
   icon: typeof Share2;
   title: string;
   body: string;
 }> = {
-  sharing: {
-    icon: Share2,
-    title: "Sharing toolkit is waiting for an active case",
-    body: "Once your medical case is linked, your public campaign link and sharing actions will be available here.",
-  },
   supporters: {
     icon: Users,
     title: "Supporter feed is waiting for donations",
@@ -129,6 +136,13 @@ export function PatientDashboardPage() {
   const [isLoadingProgress, setIsLoadingProgress] = useState(false);
   const [progressError, setProgressError] = useState("");
   const [progressRequestCount, setProgressRequestCount] = useState(0);
+  const [selectedProgressCaseId, setSelectedProgressCaseId] =
+    useState("current");
+  const [shareLinkDetails, setShareLinkDetails] =
+    useState<ShareLinkDetails | null>(null);
+  const [isLoadingShareLink, setIsLoadingShareLink] = useState(false);
+  const [shareLinkError, setShareLinkError] = useState("");
+  const [shareLinkRequestCount, setShareLinkRequestCount] = useState(0);
   const session = useMemo(() => getPatientSession(), []);
 
   useEffect(() => {
@@ -202,20 +216,27 @@ export function PatientDashboardPage() {
       setProgressError("");
 
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/v1/patients/cases/current/donation-progress`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
+        const progressEndpoint =
+          selectedProgressCaseId === "current"
+            ? "/api/v1/patients/cases/current/donation-progress"
+            : `/api/v1/patients/cases/${encodeURIComponent(
+                selectedProgressCaseId,
+              )}/donation-progress`;
+        const response = await fetch(`${API_BASE_URL}${progressEndpoint}`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
           },
-        );
+        });
         const responseBody = await parseJsonResponse(response);
 
         if (response.status === 404) {
           if (isMounted) {
             setDonationProgress(null);
-            setProgressError("Patient has no open medical case.");
+            setProgressError(
+              selectedProgressCaseId === "current"
+                ? "Patient has no open medical case."
+                : "Medical case was not found for this patient.",
+            );
           }
           return;
         }
@@ -250,13 +271,88 @@ export function PatientDashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [activeSection, progressRequestCount, session]);
+  }, [activeSection, progressRequestCount, selectedProgressCaseId, session]);
+
+  useEffect(() => {
+    if (activeSection !== "sharing" || !session?.access_token) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadShareLink = async () => {
+      setIsLoadingShareLink(true);
+      setShareLinkError("");
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/patients/cases/current/share-link`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          },
+        );
+        const responseBody = await parseJsonResponse(response);
+
+        if (response.status === 404) {
+          if (isMounted) {
+            setShareLinkDetails(null);
+            setShareLinkError("Patient has no open medical case.");
+          }
+          return;
+        }
+
+        if (response.status === 409) {
+          if (isMounted) {
+            setShareLinkDetails(null);
+            setShareLinkError(
+              "This medical case does not have a public donation link yet.",
+            );
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(
+            getApiMessage(responseBody, "Unable to load sharing link."),
+          );
+        }
+
+        if (isMounted) {
+          setShareLinkDetails(parseShareLinkDetails(responseBody));
+        }
+      } catch (error) {
+        if (isMounted) {
+          setShareLinkDetails(null);
+          setShareLinkError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load sharing link.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingShareLink(false);
+        }
+      }
+    };
+
+    void loadShareLink();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeSection, shareLinkRequestCount, session]);
 
   if (!session) {
     return <Navigate to="/login" replace />;
   }
 
-  const activeCase = session.medical_cases[0] ?? null;
+  const medicalCases = Array.isArray(session.medical_cases)
+    ? session.medical_cases
+    : [];
+  const activeCase = medicalCases[0] ?? null;
   const patientDisplayName =
     session.patient.username ||
     session.patient.first_name ||
@@ -347,11 +443,23 @@ export function PatientDashboardPage() {
               progress={donationProgress}
               isLoading={isLoadingProgress}
               errorMessage={progressError}
+              cases={medicalCases}
+              selectedCaseId={selectedProgressCaseId}
+              onCaseChange={setSelectedProgressCaseId}
               onRetry={() => setProgressRequestCount((count) => count + 1)}
             />
           )}
 
-          {(activeSection === "sharing" || activeSection === "supporters") && (
+          {activeSection === "sharing" && (
+            <SharingToolkitSection
+              shareLink={shareLinkDetails}
+              isLoading={isLoadingShareLink}
+              errorMessage={shareLinkError}
+              onRetry={() => setShareLinkRequestCount((count) => count + 1)}
+            />
+          )}
+
+          {activeSection === "supporters" && (
             <PlaceholderSection section={activeSection} />
           )}
         </main>
@@ -640,47 +748,81 @@ function ProgressHubSection({
   progress,
   isLoading,
   errorMessage,
+  cases,
+  selectedCaseId,
+  onCaseChange,
   onRetry,
 }: {
   progress: DonationProgress | null;
   isLoading: boolean;
   errorMessage: string;
+  cases: MedicalCase[];
+  selectedCaseId: string;
+  onCaseChange: (caseId: string) => void;
   onRetry: () => void;
 }) {
+  const caseSelector = (
+    <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm sm:flex-row sm:items-end sm:justify-between">
+      <label className="block min-w-0 flex-1">
+        <span className="text-sm font-bold text-slate-800">
+          Donation progress source
+        </span>
+        <select
+          value={selectedCaseId}
+          onChange={(event) => onCaseChange(event.target.value)}
+          className="mt-2 h-12 w-full rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-teal-800 focus:ring-4 focus:ring-teal-800/10"
+        >
+          <option value="current">Current open medical case</option>
+          {cases.map((medicalCase) => (
+            <option key={medicalCase.id} value={medicalCase.id}>
+              {medicalCase.title || `Case ${medicalCase.id}`}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
+      >
+        Refresh progress
+      </button>
+    </div>
+  );
+
   if (isLoading) {
     return (
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
-        <div className="h-6 w-40 rounded bg-slate-200" />
-        <div className="mt-6 grid gap-4 sm:grid-cols-3">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="rounded-xl border border-slate-200 p-5">
-              <div className="h-4 w-24 rounded bg-slate-200" />
-              <div className="mt-4 h-8 w-32 rounded bg-slate-100" />
-            </div>
-          ))}
-        </div>
-      </section>
+      <>
+        {caseSelector}
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+          <div className="h-6 w-40 rounded bg-slate-200" />
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            {[1, 2, 3].map((item) => (
+              <div key={item} className="rounded-xl border border-slate-200 p-5">
+                <div className="h-4 w-24 rounded bg-slate-200" />
+                <div className="mt-4 h-8 w-32 rounded bg-slate-100" />
+              </div>
+            ))}
+          </div>
+        </section>
+      </>
     );
   }
 
   if (errorMessage || !progress) {
     return (
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-6 text-center shadow-sm sm:p-10">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-          <Activity className="h-7 w-7" />
-        </div>
-        <h2 className="mt-5 text-2xl font-bold">No progress available</h2>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
-          {errorMessage || "Donation progress will appear once a medical case is open."}
-        </p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-6 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
-        >
-          Refresh progress
-        </button>
-      </section>
+      <>
+        {caseSelector}
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-white/95 p-6 text-center shadow-sm sm:p-10">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <Activity className="h-7 w-7" />
+          </div>
+          <h2 className="mt-5 text-2xl font-bold">No progress available</h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
+            {errorMessage || "Donation progress will appear once a medical case is open."}
+          </p>
+        </section>
+      </>
     );
   }
 
@@ -688,7 +830,8 @@ function ProgressHubSection({
   const caseDetails = progress.case;
 
   return (
-    <div className="mt-8 grid gap-5">
+    <div className="grid gap-5">
+      {caseSelector}
       <section className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
@@ -812,10 +955,228 @@ function ProgressStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SharingToolkitSection({
+  shareLink,
+  isLoading,
+  errorMessage,
+  onRetry,
+}: {
+  shareLink: ShareLinkDetails | null;
+  isLoading: boolean;
+  errorMessage: string;
+  onRetry: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+        <div className="h-6 w-44 rounded bg-slate-200" />
+        <div className="mt-6 h-24 rounded-xl bg-slate-100" />
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          {[1, 2, 3].map((item) => (
+            <div key={item} className="h-12 rounded-lg bg-slate-100" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (errorMessage || !shareLink) {
+    return (
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white/95 p-6 text-center shadow-sm sm:p-10">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Share2 className="h-7 w-7" />
+        </div>
+        <h2 className="mt-5 text-2xl font-bold">No share link available</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-slate-600 sm:text-base">
+          {errorMessage ||
+            "Your sharing toolkit will appear once your medical case has a public donation link."}
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-6 inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
+        >
+          Refresh link
+        </button>
+      </section>
+    );
+  }
+
+  const shareUrl = shareLink.share_url || shareLink.public_link;
+  const shareText = shareLink.message || `Support ${shareLink.title}`;
+  const encodedUrl = encodeURIComponent(shareUrl);
+  const encodedText = encodeURIComponent(shareText);
+  const shareTargets = [
+    {
+      label: "WhatsApp",
+      icon: MessageCircle,
+      href: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+    },
+    {
+      label: "Instagram",
+      icon: Share2,
+      href: "https://www.instagram.com/",
+      copiesFirst: true,
+    },
+    {
+      label: "Facebook",
+      icon: Users,
+      href: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+    },
+    {
+      label: "X",
+      icon: ExternalLink,
+      href: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+    },
+    {
+      label: "LinkedIn",
+      icon: LinkIcon,
+      href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`,
+    },
+    {
+      label: "Telegram",
+      icon: Send,
+      href: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+    },
+  ];
+
+  const copyShareLink = async () => {
+    await navigator.clipboard.writeText(shareUrl);
+    toast.success("Share link copied.");
+  };
+
+  const nativeShare = async () => {
+    if (!navigator.share) {
+      await copyShareLink();
+      return;
+    }
+
+    await navigator.share({
+      title: shareLink.title,
+      text: shareText,
+      url: shareUrl,
+    });
+  };
+
+  const openShareTarget = async (target: (typeof shareTargets)[number]) => {
+    if (target.copiesFirst) {
+      await copyShareLink();
+      toast.success("Link copied. Paste it into your Instagram post, story, or bio.");
+    }
+
+    window.open(target.href, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <div className="mt-8 grid gap-5">
+      <section className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+        <div className="grid gap-6 lg:grid-cols-[1fr_340px] lg:items-start">
+          <div className="min-w-0">
+            <span className="inline-flex rounded-full bg-teal-50 px-4 py-2 text-sm font-bold text-teal-800">
+              Ready to share
+            </span>
+            <h2 className="mt-5 break-words text-2xl font-bold sm:text-3xl">
+              {shareLink.title || "Medical funding campaign"}
+            </h2>
+            <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700 sm:text-base">
+              {shareText}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-teal-100 bg-teal-50 p-5">
+            <p className="text-sm font-bold text-teal-950">Campaign link</p>
+            <div className="mt-3 flex overflow-hidden rounded-lg border border-teal-100 bg-white">
+              <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
+                <LinkIcon className="h-4 w-4 shrink-0 text-slate-500" />
+                <span className="truncate text-sm font-semibold text-slate-700">
+                  {shareUrl}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={copyShareLink}
+                aria-label="Copy share link"
+                className="bg-teal-800 px-4 text-white transition hover:bg-teal-900"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={nativeShare}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-teal-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
+            >
+              <Share2 className="h-4 w-4" />
+              Share from device
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm sm:p-8">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Share on social media</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Choose a platform or copy the link for any app.
+            </p>
+          </div>
+          <a
+            href={shareUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800 transition hover:border-teal-800 hover:text-teal-800"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Open link
+          </a>
+        </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {shareTargets.map((target) => {
+            const Icon = target.icon;
+
+            return (
+              <button
+                key={target.label}
+                type="button"
+                onClick={() => {
+                  void openShareTarget(target);
+                }}
+                className="inline-flex h-12 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-900"
+              >
+                <Icon className="h-4 w-4" />
+                {target.label}
+              </button>
+            );
+          })}
+          <a
+            href={`mailto:?subject=${encodeURIComponent(
+              shareLink.title,
+            )}&body=${encodedText}%0A%0A${encodedUrl}`}
+            className="inline-flex h-12 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-900"
+          >
+            <Send className="h-4 w-4" />
+            Email
+          </a>
+          <button
+            type="button"
+            onClick={copyShareLink}
+            className="inline-flex h-12 items-center justify-center gap-3 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-900"
+          >
+            <Copy className="h-4 w-4" />
+            Copy for other apps
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PlaceholderSection({
   section,
 }: {
-  section: Exclude<DashboardSection, "dashboard" | "progress">;
+  section: Exclude<DashboardSection, "dashboard" | "progress" | "sharing">;
 }) {
   const placeholder = placeholderSections[section];
   const Icon = placeholder.icon;
@@ -1110,6 +1471,29 @@ function parseDonationProgress(responseBody: unknown): DonationProgress {
       : [],
     percentage_left: getNumber(body.percentage_left),
     percentage_paid: getNumber(body.percentage_paid),
+  };
+}
+
+function parseShareLinkDetails(responseBody: unknown): ShareLinkDetails {
+  if (!responseBody || typeof responseBody !== "object") {
+    throw new Error("Invalid sharing link response.");
+  }
+
+  const body = responseBody as Record<string, unknown>;
+  const shareUrl = getString(body.share_url);
+  const publicLink = getString(body.public_link);
+
+  if (!shareUrl && !publicLink) {
+    throw new Error("Invalid sharing link response.");
+  }
+
+  return {
+    medical_case_id: getString(body.medical_case_id),
+    message: getString(body.message),
+    public_link: publicLink,
+    public_slug: getString(body.public_slug),
+    share_url: shareUrl,
+    title: getString(body.title),
   };
 }
 

@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BrandLogo } from "../components/BrandLogo";
-import { API_BASE_URL } from "../config/api";
+import { API_BASE_URL, PUBLIC_APP_BASE_URL } from "../config/api";
 import {
   clearPatientSession,
   formatNairaFromKobo,
@@ -599,9 +599,10 @@ function PatientCaseDashboard({ medicalCase }: { medicalCase: MedicalCase }) {
   const raised = medicalCase.amount_raised_kobo;
   const target = medicalCase.bill_amount_kobo;
   const percentage = target > 0 ? Math.min(Math.round((raised / target) * 100), 100) : 0;
-  const publicLink =
+  const publicLink = toAbsoluteUrl(
     medicalCase.public_link ||
-    `https://korede.health/donate/${medicalCase.public_slug || medicalCase.id}`;
+      `/donate/${medicalCase.public_slug || medicalCase.id}`,
+  );
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(publicLink);
@@ -1005,7 +1006,7 @@ function SharingToolkitSection({
     );
   }
 
-  const shareUrl = shareLink.share_url || shareLink.public_link;
+  const shareUrl = toAbsoluteUrl(shareLink.share_url || shareLink.public_link);
   const shareText = shareLink.message || `Support ${shareLink.title}`;
   const encodedUrl = encodeURIComponent(shareUrl);
   const encodedText = encodeURIComponent(shareText);
@@ -1523,6 +1524,21 @@ function formatProgressDate(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function toAbsoluteUrl(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    return new URL(value).toString();
+  } catch {
+    return new URL(
+      value.startsWith("/") ? value : `/${value}`,
+      PUBLIC_APP_BASE_URL,
+    ).toString();
+  }
 }
 
 async function parseJsonResponse(response: Response) {

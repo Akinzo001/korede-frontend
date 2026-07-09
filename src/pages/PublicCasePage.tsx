@@ -1016,9 +1016,9 @@ async function monitorPaystackPayment(
         const response = await fetch(
           `${API_BASE_URL}/api/v1/payments/paystack/verify/${encodeURIComponent(
             paystackReference,
-          )}?request_time=${Date.now()}`,
+          )}`,
           {
-            cache: "no-store",
+            method: "POST",
             headers: {
               Accept: "application/json",
             },

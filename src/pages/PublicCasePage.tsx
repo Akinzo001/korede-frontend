@@ -22,13 +22,15 @@ import { API_BASE_URL, PUBLIC_APP_BASE_URL } from "../config/api";
 import { formatNairaFromKobo } from "../lib/auth";
 
 type PublicCase = {
-  admitted_at: string;
+  admitted_at: string | null;
+  active_pending_payment_count: number;
   amount_raised_kobo: number;
+  available_amount_kobo: number;
   bill_amount_kobo: number;
   created_at: string;
   diagnosis_summary: string;
-  donation_options: string;
-  donor_count?: number;
+  donation_options: DonationOptions;
+  donors: PublicDonor[];
   hospital_id: string;
   hospital_address: string;
   hospital_name: string;
@@ -37,20 +39,47 @@ type PublicCase = {
   patient_id: string;
   public_link: string;
   public_slug: string;
+  pending_amount_kobo: number;
   remaining_amount_kobo: number;
   status: string;
   title: string;
   updated_at: string;
 };
 
+type DonationOptions = {
+  checkout_enabled: boolean;
+  donations_closed: boolean;
+  dva_enabled: boolean;
+};
+
+type PublicDonor = {
+  amount_kobo: number;
+  display_name: string;
+  id: string;
+  method: string;
+  paid_at: string;
+  sui_transaction_url: string;
+};
+
 type PaymentMethod = "checkout" | "dva_transfer";
 
+type CheckoutDetails = {
+  access_code: string;
+  amount_kobo: number;
+  authorization_url: string;
+  donation_id: string;
+  donor_display_name: string;
+  expires_in_seconds: number;
+  paystack_reference: string;
+  reservation_expires_at: string;
+};
+
 type DonationInitializeResponse = {
-  checkout: string;
+  checkout: CheckoutDetails | null;
   checkout_enabled: boolean;
-  donation_closed: boolean;
+  donations_closed: boolean;
   dva_enabled: boolean;
-  dva_transfer: string;
+  dva_transfer: Record<string, unknown> | null;
   payment_method: string;
 };
 
@@ -168,7 +197,7 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
   );
   const patientName = getPatientNameFromSlug(medicalCase.public_slug);
   const billingItems = buildBillingItems(medicalCase);
-  const donorCount = medicalCase.donor_count ?? 0;
+  const donorCount = medicalCase.donors.length;
   const donationOptions = parseDonationOptions(medicalCase.donation_options);
 
   const copyPublicUrl = async () => {
@@ -180,8 +209,6 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
     event.preventDefault();
 
     const amountNumber = Number(amount);
-    const amountKobo = Math.round(amountNumber * 100);
-
     if (!donorName.trim()) {
       toast.error("Please enter your name.");
       return;
@@ -192,7 +219,7 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
       return;
     }
 
-    if (!amountNumber || amountKobo <= 0) {
+    if (!amountNumber || amountNumber <= 0) {
       toast.error("Please enter a valid donation amount.");
       return;
     }
@@ -211,7 +238,7 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            amount: amountKobo,
+            amount: amountNumber,
             donor_email: donorEmail.trim(),
             donor_name: donorName.trim(),
             payment_method: paymentMethod,
@@ -221,9 +248,7 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
       const responseBody = await parseJsonResponse(response);
 
       if (!response.ok) {
-        throw new Error(
-          getApiMessage(responseBody, "Unable to initialize donation."),
-        );
+        throw new Error(getDonationErrorMessage(response.status, responseBody));
       }
 
       const initializedDonation = parseDonationInitializeResponse(responseBody);
@@ -500,13 +525,18 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
 
               <button
                 type="submit"
-                disabled={isInitializingDonation}
+                disabled={
+                  isInitializingDonation ||
+                  medicalCase.donation_options.donations_closed
+                }
                 className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-4 text-sm font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 <HeartHandshake className="h-5 w-5" />
-                {isInitializingDonation
-                  ? "Initializing..."
-                  : "Donate to this bill"}
+                {medicalCase.donation_options.donations_closed
+                  ? "Donations closed"
+                  : isInitializingDonation
+                    ? "Initializing..."
+                    : "Donate to this bill"}
               </button>
             </form>
 
@@ -618,7 +648,7 @@ function DonationPaymentResult({
 }: {
   donation: DonationInitializeResponse;
 }) {
-  const checkoutUrl = toOptionalAbsoluteUrl(donation.checkout);
+  const checkoutUrl = donation.checkout?.authorization_url ?? "";
   const transferDetails = donation.dva_transfer;
   const isCheckout = donation.payment_method === "checkout";
 
@@ -634,29 +664,64 @@ function DonationPaymentResult({
       </p>
 
       {isCheckout && checkoutUrl && (
-        <a
-          href={checkoutUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-teal-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
-        >
-          Continue to checkout
-        </a>
+        <>
+          <div className="mt-4 space-y-2 rounded-lg border border-teal-100 bg-white p-3 text-sm">
+            <PaymentDetail
+              label="Amount"
+              value={formatNairaFromKobo(donation.checkout?.amount_kobo ?? 0)}
+            />
+            <PaymentDetail
+              label="Reference"
+              value={donation.checkout?.paystack_reference ?? ""}
+            />
+            <PaymentDetail
+              label="Reserved until"
+              value={formatCaseDate(
+                donation.checkout?.reservation_expires_at ?? null,
+              )}
+            />
+          </div>
+          <a
+            href={checkoutUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-teal-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
+          >
+            Continue to secure checkout
+          </a>
+        </>
       )}
 
       {!isCheckout && transferDetails && (
-        <div className="mt-4 rounded-lg border border-teal-100 bg-white p-3">
-          <p className="whitespace-pre-wrap break-words text-sm font-semibold leading-6 text-slate-800">
-            {transferDetails}
-          </p>
+        <div className="mt-4 space-y-2 rounded-lg border border-teal-100 bg-white p-3">
+          {Object.entries(transferDetails).map(([key, value]) => (
+            <PaymentDetail
+              key={key}
+              label={formatPaymentLabel(key)}
+              value={formatPaymentValue(key, value)}
+            />
+          ))}
         </div>
       )}
 
-      {donation.donation_closed && (
+      {donation.donations_closed && (
         <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-800">
           Donations are currently closed for this case.
         </p>
       )}
+    </div>
+  );
+}
+
+function PaymentDetail({ label, value }: { label: string; value: string }) {
+  if (!value) {
+    return null;
+  }
+
+  return (
+    <div className="grid gap-1 sm:grid-cols-[120px_1fr]">
+      <span className="font-semibold text-slate-500">{label}</span>
+      <span className="break-all font-bold text-slate-800">{value}</span>
     </div>
   );
 }
@@ -722,15 +787,56 @@ function buildBillingItems(medicalCase: PublicCase) {
   ];
 }
 
-function parseDonationOptions(value: string) {
-  if (!value) {
+function parseDonationOptions(options: DonationOptions) {
+  const enabledOptions: string[] = [];
+
+  if (options.checkout_enabled) {
+    enabledOptions.push("Secure online checkout");
+  }
+
+  if (options.dva_enabled) {
+    enabledOptions.push("Bank transfer");
+  }
+
+  return enabledOptions;
+}
+
+function parseDonationOptionsResponse(value: unknown): DonationOptions {
+  if (!value || typeof value !== "object") {
+    return {
+      checkout_enabled: false,
+      donations_closed: false,
+      dva_enabled: false,
+    };
+  }
+
+  const options = value as Record<string, unknown>;
+
+  return {
+    checkout_enabled: getBoolean(options.checkout_enabled),
+    donations_closed: getBoolean(options.donations_closed),
+    dva_enabled: getBoolean(options.dva_enabled),
+  };
+}
+
+function parsePublicDonors(value: unknown): PublicDonor[] {
+  if (!Array.isArray(value)) {
     return [];
   }
 
   return value
-    .split(/[,|;\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+    .filter(
+      (donor): donor is Record<string, unknown> =>
+        Boolean(donor) && typeof donor === "object",
+    )
+    .map((donor) => ({
+      amount_kobo: getNumber(donor.amount_kobo),
+      display_name: getString(donor.display_name),
+      id: getString(donor.id),
+      method: getString(donor.method),
+      paid_at: getString(donor.paid_at),
+      sui_transaction_url: getString(donor.sui_transaction_url),
+    }));
 }
 
 function getPatientNameFromSlug(slug: string) {
@@ -744,7 +850,7 @@ function capitalize(value: string) {
   return value ? `${value[0].toUpperCase()}${value.slice(1)}` : "";
 }
 
-function formatCaseDate(value: string) {
+function formatCaseDate(value: string | null) {
   if (!value) {
     return "Not available";
   }
@@ -779,13 +885,17 @@ function parsePublicCase(responseBody: unknown): PublicCase {
   const body = responseBody as Record<string, unknown>;
 
   return {
-    admitted_at: getString(body.admitted_at),
+    admitted_at: getNullableString(body.admitted_at),
+    active_pending_payment_count: getNumber(
+      body.active_pending_payment_count,
+    ),
     amount_raised_kobo: getNumber(body.amount_raised_kobo),
+    available_amount_kobo: getNumber(body.available_amount_kobo),
     bill_amount_kobo: getNumber(body.bill_amount_kobo),
     created_at: getString(body.created_at),
     diagnosis_summary: getString(body.diagnosis_summary),
-    donation_options: getString(body.donation_options),
-    donor_count: getNumber(body.donor_count),
+    donation_options: parseDonationOptionsResponse(body.donation_options),
+    donors: parsePublicDonors(body.donors),
     hospital_id: getString(body.hospital_id),
     hospital_address: getString(body.hospital_address),
     hospital_name: getString(body.hospital_name),
@@ -794,6 +904,7 @@ function parsePublicCase(responseBody: unknown): PublicCase {
     patient_id: getString(body.patient_id),
     public_link: getString(body.public_link),
     public_slug: getString(body.public_slug),
+    pending_amount_kobo: getNumber(body.pending_amount_kobo),
     remaining_amount_kobo: getNumber(body.remaining_amount_kobo),
     status: getString(body.status),
     title: getString(body.title),
@@ -811,17 +922,40 @@ function parseDonationInitializeResponse(
   const body = responseBody as Record<string, unknown>;
 
   return {
-    checkout: getString(body.checkout),
+    checkout: parseCheckoutDetails(body.checkout),
     checkout_enabled: getBoolean(body.checkout_enabled),
-    donation_closed: getBoolean(body.donation_closed),
+    donations_closed: getBoolean(body.donations_closed),
     dva_enabled: getBoolean(body.dva_enabled),
-    dva_transfer: getString(body.dva_transfer),
+    dva_transfer: getObject(body.dva_transfer),
     payment_method: getString(body.payment_method),
+  };
+}
+
+function parseCheckoutDetails(value: unknown): CheckoutDetails | null {
+  const checkout = getObject(value);
+
+  if (!checkout) {
+    return null;
+  }
+
+  return {
+    access_code: getString(checkout.access_code),
+    amount_kobo: getNumber(checkout.amount_kobo),
+    authorization_url: getString(checkout.authorization_url),
+    donation_id: getString(checkout.donation_id),
+    donor_display_name: getString(checkout.donor_display_name),
+    expires_in_seconds: getNumber(checkout.expires_in_seconds),
+    paystack_reference: getString(checkout.paystack_reference),
+    reservation_expires_at: getString(checkout.reservation_expires_at),
   };
 }
 
 function getString(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function getNullableString(value: unknown) {
+  return typeof value === "string" ? value : null;
 }
 
 function getPatientStatement(body: Record<string, unknown>) {
@@ -859,12 +993,38 @@ function getBoolean(value: unknown) {
   return typeof value === "boolean" ? value : false;
 }
 
-function toOptionalAbsoluteUrl(value: string) {
-  if (!value) {
-    return "";
+function getObject(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
   }
 
-  return toAbsolutePublicUrl(value);
+  return value as Record<string, unknown>;
+}
+
+function formatPaymentLabel(value: string) {
+  return value
+    .replace(/_kobo$/, "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatPaymentValue(key: string, value: unknown) {
+  if (key.endsWith("_kobo") && typeof value === "number") {
+    return formatNairaFromKobo(value);
+  }
+
+  if (
+    (key.endsWith("_at") || key.includes("expires")) &&
+    typeof value === "string"
+  ) {
+    return formatCaseDate(value);
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  return "";
 }
 
 async function parseJsonResponse(response: Response) {
@@ -901,4 +1061,26 @@ function getApiMessage(responseBody: unknown, fallbackMessage: string) {
   }
 
   return fallbackMessage;
+}
+
+function getDonationErrorMessage(status: number, responseBody: unknown) {
+  const backendMessage = getApiMessage(responseBody, "");
+
+  if (backendMessage) {
+    return backendMessage;
+  }
+
+  if (status === 409) {
+    return "This donation cannot be accepted because donations are closed or the amount exceeds the campaign's remaining balance.";
+  }
+
+  if (status === 404) {
+    return "This medical campaign could not be found.";
+  }
+
+  if (status === 400) {
+    return "The donation details are invalid. Please check the amount, email, and payment method.";
+  }
+
+  return "We could not start this donation. Please try again.";
 }

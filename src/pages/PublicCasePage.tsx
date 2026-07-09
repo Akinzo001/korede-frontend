@@ -111,18 +111,7 @@ export function PublicCasePage() {
       setErrorMessage("");
 
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/cases/${encodeURIComponent(publicSlug ?? "")}`,
-        );
-        const responseBody = await parseJsonResponse(response);
-
-        if (response.status === 404) {
-          throw new Error("Medical case was not found.");
-        }
-
-        if (!response.ok) {
-          throw new Error(getApiMessage(responseBody, "Unable to load case."));
-        }
+        const responseBody = await fetchPublicCase(publicSlug ?? "");
 
         if (isMounted) {
           setMedicalCase(parsePublicCase(responseBody));
@@ -131,7 +120,9 @@ export function PublicCasePage() {
         if (isMounted) {
           setMedicalCase(null);
           setErrorMessage(
-            error instanceof Error ? error.message : "Unable to load case.",
+            error instanceof Error
+              ? error.message
+              : "We could not reconnect to this campaign. Please refresh and try again.",
           );
         }
       } finally {
@@ -1038,7 +1029,10 @@ async function monitorPaystackPayment(
           toast.success(
             verification.message || "Payment verified successfully.",
           );
-          window.setTimeout(() => window.location.reload(), 1200);
+          window.setTimeout(
+            () => window.location.replace(window.location.pathname),
+            1200,
+          );
           return;
         }
       } catch {
@@ -1147,6 +1141,66 @@ async function parseJsonResponse(response: Response) {
   } catch {
     return { message: text };
   }
+}
+
+async function fetchPublicCase(publicSlug: string) {
+  const maximumAttempts = 3;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/cases/${encodeURIComponent(publicSlug)}`,
+        {
+          cache: "no-store",
+          headers: {
+            Accept: "application/json",
+          },
+        },
+      );
+      const responseBody = await parseJsonResponse(response);
+
+      if (response.status === 404) {
+        throw new Error("Medical case was not found.");
+      }
+
+      if (response.ok) {
+        return responseBody;
+      }
+
+      const error = new Error(
+        getApiMessage(
+          responseBody,
+          "We could not reconnect to this campaign. Please try again.",
+        ),
+      );
+
+      if (response.status < 500) {
+        throw error;
+      }
+
+      lastError = error;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Medical case was not found."
+      ) {
+        throw error;
+      }
+
+      lastError = error;
+    }
+
+    if (attempt < maximumAttempts - 1) {
+      await wait(1000 * (attempt + 1));
+    }
+  }
+
+  throw new Error(
+    lastError instanceof Error && lastError.message !== "Failed to fetch"
+      ? lastError.message
+      : "We could not reconnect to this campaign. Check your connection and try again.",
+  );
 }
 
 function getApiMessage(responseBody: unknown, fallbackMessage: string) {

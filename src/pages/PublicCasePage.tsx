@@ -3,6 +3,7 @@ import {
   BadgeCheck,
   Building2,
   CalendarDays,
+  CheckCircle2,
   Copy,
   FileText,
   HeartHandshake,
@@ -81,6 +82,13 @@ type DonationInitializeResponse = {
   dva_enabled: boolean;
   dva_transfer: Record<string, unknown> | null;
   payment_method: string;
+};
+
+type PaymentVerificationResponse = {
+  donation_id: string;
+  message: string;
+  payment_status: string;
+  status: string;
 };
 
 export function PublicCasePage() {
@@ -252,6 +260,24 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
       }
 
       const initializedDonation = parseDonationInitializeResponse(responseBody);
+
+      if (initializedDonation.payment_method === "checkout") {
+        const checkoutUrl = initializedDonation.checkout?.authorization_url;
+
+        if (!checkoutUrl) {
+          throw new Error(
+            "Paystack did not return a checkout link. Please try again.",
+          );
+        }
+
+        sessionStorage.setItem(
+          "korede_pending_paystack_reference",
+          initializedDonation.checkout?.paystack_reference ?? "",
+        );
+        window.location.assign(checkoutUrl);
+        return;
+      }
+
       setDonationResponse(initializedDonation);
       toast.success("Donation payment initialized.");
     } catch (error) {
@@ -648,9 +674,61 @@ function DonationPaymentResult({
 }: {
   donation: DonationInitializeResponse;
 }) {
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verification, setVerification] =
+    useState<PaymentVerificationResponse | null>(null);
   const checkoutUrl = donation.checkout?.authorization_url ?? "";
+  const paystackReference = donation.checkout?.paystack_reference ?? "";
   const transferDetails = donation.dva_transfer;
   const isCheckout = donation.payment_method === "checkout";
+  const paymentIsConfirmed = verification?.payment_status === "paid";
+
+  const verifyPaystackPayment = async () => {
+    if (!paystackReference) {
+      toast.error("The Paystack payment reference is missing.");
+      return;
+    }
+
+    setIsVerifying(true);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/v1/payments/paystack/verify/${encodeURIComponent(
+          paystackReference,
+        )}`,
+      );
+      const responseBody = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          getApiMessage(
+            responseBody,
+            response.status === 404
+              ? "This Paystack transaction could not be found."
+              : "The payment could not be verified yet. Confirm payment on Paystack and try again.",
+          ),
+        );
+      }
+
+      const verifiedPayment = parsePaymentVerificationResponse(responseBody);
+      setVerification(verifiedPayment);
+
+      if (verifiedPayment.payment_status === "paid") {
+        toast.success(verifiedPayment.message || "Payment verified.");
+      } else {
+        toast.info(
+          verifiedPayment.message ||
+            `Payment status: ${verifiedPayment.payment_status}.`,
+        );
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to verify payment.",
+      );
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   return (
     <div className="mt-5 rounded-xl border border-teal-100 bg-teal-50 p-4">
@@ -689,6 +767,33 @@ function DonationPaymentResult({
           >
             Continue to secure checkout
           </a>
+          <button
+            type="button"
+            onClick={verifyPaystackPayment}
+            disabled={isVerifying || paymentIsConfirmed}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-teal-700 bg-white px-4 py-3 text-sm font-bold text-teal-800 transition hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {paymentIsConfirmed
+              ? "Payment verified"
+              : isVerifying
+                ? "Verifying payment..."
+                : "I have paid, verify payment"}
+          </button>
+          {verification && (
+            <div
+              className={`mt-3 rounded-lg p-3 text-sm font-semibold ${
+                paymentIsConfirmed
+                  ? "bg-emerald-100 text-emerald-900"
+                  : "bg-amber-100 text-amber-900"
+              }`}
+            >
+              <p>{verification.message}</p>
+              <p className="mt-1 capitalize">
+                Payment status: {verification.payment_status}
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -947,6 +1052,23 @@ function parseCheckoutDetails(value: unknown): CheckoutDetails | null {
     expires_in_seconds: getNumber(checkout.expires_in_seconds),
     paystack_reference: getString(checkout.paystack_reference),
     reservation_expires_at: getString(checkout.reservation_expires_at),
+  };
+}
+
+function parsePaymentVerificationResponse(
+  responseBody: unknown,
+): PaymentVerificationResponse {
+  const body = getObject(responseBody);
+
+  if (!body) {
+    throw new Error("The payment verification response was invalid.");
+  }
+
+  return {
+    donation_id: getString(body.donation_id),
+    message: getString(body.message),
+    payment_status: getString(body.payment_status),
+    status: getString(body.status),
   };
 }
 

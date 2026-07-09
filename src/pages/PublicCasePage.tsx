@@ -90,6 +90,9 @@ type PaymentVerificationResponse = {
   status: string;
 };
 
+const pendingPaystackReferenceKey = "korede_pending_paystack_reference";
+const activePaystackVerifications = new Set<string>();
+
 export function PublicCasePage() {
   const { publicSlug } = useParams();
   const [medicalCase, setMedicalCase] = useState<PublicCase | null>(null);
@@ -144,6 +147,16 @@ export function PublicCasePage() {
       isMounted = false;
     };
   }, [publicSlug]);
+
+  useEffect(() => {
+    const pendingReference = sessionStorage.getItem(
+      pendingPaystackReferenceKey,
+    );
+
+    if (pendingReference) {
+      void monitorPaystackPayment(pendingReference, null);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
@@ -275,6 +288,10 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
         }
 
         if (checkoutWindow) {
+          sessionStorage.setItem(
+            pendingPaystackReferenceKey,
+            initializedDonation.checkout?.paystack_reference ?? "",
+          );
           checkoutWindow.location.assign(checkoutUrl);
           void monitorPaystackPayment(
             initializedDonation.checkout?.paystack_reference ?? "",
@@ -974,47 +991,67 @@ function parsePaymentVerificationResponse(
 
 async function monitorPaystackPayment(
   paystackReference: string,
-  checkoutWindow: Window,
+  checkoutWindow: Window | null,
 ) {
   if (!paystackReference) {
-    checkoutWindow.close();
+    checkoutWindow?.close();
     toast.error("The Paystack payment reference is missing.");
     return;
   }
 
-  const maximumAttempts = 100;
-
-  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
-    await wait(3000);
-
-    try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/v1/payments/paystack/verify/${encodeURIComponent(
-          paystackReference,
-        )}`,
-      );
-      const responseBody = await parseJsonResponse(response);
-
-      if (!response.ok) {
-        continue;
-      }
-
-      const verification = parsePaymentVerificationResponse(responseBody);
-
-      if (verification.payment_status === "paid") {
-        checkoutWindow.close();
-        toast.success(verification.message || "Payment verified successfully.");
-        window.setTimeout(() => window.location.reload(), 1200);
-        return;
-      }
-    } catch {
-      // A temporary verification failure should not interrupt checkout.
-    }
+  if (activePaystackVerifications.has(paystackReference)) {
+    return;
   }
 
-  toast.error(
-    "Payment verification timed out. Refresh the campaign to check the latest donation status.",
-  );
+  activePaystackVerifications.add(paystackReference);
+  const maximumAttempts = 100;
+
+  try {
+    for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+      if (attempt > 0) {
+        await wait(3000);
+      }
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/payments/paystack/verify/${encodeURIComponent(
+            paystackReference,
+          )}?request_time=${Date.now()}`,
+          {
+            cache: "no-store",
+            headers: {
+              Accept: "application/json",
+            },
+          },
+        );
+        const responseBody = await parseJsonResponse(response);
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const verification = parsePaymentVerificationResponse(responseBody);
+
+        if (verification.payment_status === "paid") {
+          sessionStorage.removeItem(pendingPaystackReferenceKey);
+          checkoutWindow?.close();
+          toast.success(
+            verification.message || "Payment verified successfully.",
+          );
+          window.setTimeout(() => window.location.reload(), 1200);
+          return;
+        }
+      } catch {
+        // A temporary verification failure should not interrupt checkout.
+      }
+    }
+
+    toast.error(
+      "Payment verification timed out. Refresh the campaign to check the latest donation status.",
+    );
+  } finally {
+    activePaystackVerifications.delete(paystackReference);
+  }
 }
 
 function wait(milliseconds: number) {

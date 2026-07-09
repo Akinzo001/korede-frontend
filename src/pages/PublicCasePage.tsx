@@ -211,7 +211,7 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            amount_kobo: amountKobo,
+            amount: amountKobo,
             donor_email: donorEmail.trim(),
             donor_name: donorName.trim(),
             payment_method: paymentMethod,

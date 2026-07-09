@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   BadgeCheck,
   Building2,
   CalendarDays,
@@ -315,14 +314,6 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
     <>
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-8">
         <div className="min-w-0 space-y-6">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-teal-800"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Korede
-          </Link>
-
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
               <div className="p-5 sm:p-8">

@@ -2,7 +2,6 @@ import {
   Activity,
   Copy,
   ExternalLink,
-  Heart,
   LayoutDashboard,
   Link as LinkIcon,
   LogOut,
@@ -396,7 +395,7 @@ export function PatientDashboardPage() {
         }}
       />
 
-      <div className="relative z-10 min-w-0">
+      <div className="relative z-10 min-w-0 lg:col-start-2">
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:hidden">
           <Link to="/" className="text-3xl">
             <BrandLogo />
@@ -513,7 +512,7 @@ function PatientSidebar({
       />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[min(18rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white transition-transform lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-auto lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[min(18rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white transition-transform lg:w-[260px] lg:translate-x-0 xl:w-[280px] ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -611,8 +610,8 @@ function PatientCaseDashboard({ medicalCase }: { medicalCase: MedicalCase }) {
 
   return (
     <div className="mt-6 grid min-w-0 gap-4 sm:mt-8 sm:gap-5 xl:grid-cols-[1fr_1.1fr]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 xl:col-span-2">
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(180px,320px)_1fr] lg:items-center">
+      <section className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 xl:col-span-2">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(180px,220px)_1fr] lg:items-center">
           <div className="relative mx-auto flex aspect-square w-full max-w-48 items-center justify-center rounded-full bg-teal-50 sm:max-w-64">
             <svg
               className="absolute inset-0 h-full w-full -rotate-90"
@@ -710,40 +709,6 @@ function PatientCaseDashboard({ medicalCase }: { medicalCase: MedicalCase }) {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
-              <Heart className="h-6 w-6" />
-            </span>
-            <h2 className="text-xl font-bold sm:text-2xl">Wall of Kindness</h2>
-          </div>
-          <span className="rounded-full bg-slate-100 px-4 py-2 text-xs font-bold">
-            Recent
-          </span>
-        </div>
-
-        <div className="mt-8 space-y-4">
-          {[
-            ["Musa B.", "Donated N5,000", "Stay strong!"],
-            ["Anonymous", "Donated N50,000", "Prayers with you."],
-            ["Sarah J.", "Donated N10,000", "Get well soon!"],
-          ].map(([name, donation, message]) => (
-            <article key={name} className="rounded-xl border border-slate-200 p-5">
-              <div className="flex justify-between gap-4">
-                <div>
-                  <p className="font-semibold">{name}</p>
-                  <p className="text-sm font-bold text-teal-800">{donation}</p>
-                </div>
-                <span className="text-xs text-slate-500">Recent</span>
-              </div>
-              <p className="mt-4 rounded-lg bg-slate-50 p-4 italic text-slate-700">
-                "{message}"
-              </p>
-            </article>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }

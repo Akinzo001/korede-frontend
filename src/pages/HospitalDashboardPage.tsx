@@ -246,7 +246,7 @@ export function HospitalDashboardPage() {
         }}
       />
 
-      <div className="min-w-0">
+      <div className="min-w-0 lg:col-start-2">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:px-6">
           <div className="flex items-center gap-3">
             <button
@@ -345,7 +345,7 @@ function HospitalSidebar({
       />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[min(18rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white transition-transform lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-auto lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[min(18rem,calc(100vw-2rem))] flex-col border-r border-slate-200 bg-white transition-transform lg:w-[260px] lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >

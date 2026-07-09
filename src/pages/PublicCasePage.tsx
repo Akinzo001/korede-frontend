@@ -14,7 +14,7 @@ import {
   Sparkles,
   WalletCards,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { BrandLogo } from "../components/BrandLogo";
@@ -30,6 +30,8 @@ type PublicCase = {
   donation_options: string;
   donor_count?: number;
   hospital_id: string;
+  hospital_address: string;
+  hospital_name: string;
   id: string;
   patient_declaration: string;
   patient_id: string;
@@ -39,6 +41,17 @@ type PublicCase = {
   status: string;
   title: string;
   updated_at: string;
+};
+
+type PaymentMethod = "checkout" | "dva_transfer";
+
+type DonationInitializeResponse = {
+  checkout: string;
+  checkout_enabled: boolean;
+  donation_closed: boolean;
+  dva_enabled: boolean;
+  dva_transfer: string;
+  payment_method: string;
 };
 
 export function PublicCasePage() {
@@ -137,6 +150,14 @@ export function PublicCasePage() {
 }
 
 function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
+  const [donorName, setDonorName] = useState("");
+  const [donorEmail, setDonorEmail] = useState("");
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] =
+    useState<PaymentMethod>("checkout");
+  const [isInitializingDonation, setIsInitializingDonation] = useState(false);
+  const [donationResponse, setDonationResponse] =
+    useState<DonationInitializeResponse | null>(null);
   const raised = medicalCase.amount_raised_kobo;
   const target = medicalCase.bill_amount_kobo;
   const remaining = medicalCase.remaining_amount_kobo;
@@ -153,6 +174,70 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
   const copyPublicUrl = async () => {
     await navigator.clipboard.writeText(publicUrl);
     toast.success("Campaign link copied.");
+  };
+
+  const initializeDonation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const amountNumber = Number(amount);
+    const amountKobo = Math.round(amountNumber * 100);
+
+    if (!donorName.trim()) {
+      toast.error("Please enter your name.");
+      return;
+    }
+
+    if (!donorEmail.trim()) {
+      toast.error("Please enter your email address.");
+      return;
+    }
+
+    if (!amountNumber || amountKobo <= 0) {
+      toast.error("Please enter a valid donation amount.");
+      return;
+    }
+
+    setIsInitializingDonation(true);
+    setDonationResponse(null);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/cases/${encodeURIComponent(
+          medicalCase.public_slug,
+        )}/donations/initialize`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount_kobo: amountKobo,
+            donor_email: donorEmail.trim(),
+            donor_name: donorName.trim(),
+            payment_method: paymentMethod,
+          }),
+        },
+      );
+      const responseBody = await parseJsonResponse(response);
+
+      if (!response.ok) {
+        throw new Error(
+          getApiMessage(responseBody, "Unable to initialize donation."),
+        );
+      }
+
+      const initializedDonation = parseDonationInitializeResponse(responseBody);
+      setDonationResponse(initializedDonation);
+      toast.success("Donation payment initialized.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to initialize donation.",
+      );
+    } finally {
+      setIsInitializingDonation(false);
+    }
   };
 
   return (
@@ -344,13 +429,91 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
               </div>
             )}
 
-            <button
-              type="button"
-              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-4 text-sm font-bold text-slate-950 transition hover:bg-amber-300"
-            >
-              <HeartHandshake className="h-5 w-5" />
-              Donate to this bill
-            </button>
+            <form onSubmit={initializeDonation} className="mt-5 space-y-4">
+              <label className="block">
+                <span className="text-sm font-bold text-slate-800">
+                  Your name
+                </span>
+                <input
+                  type="text"
+                  value={donorName}
+                  onChange={(event) => setDonorName(event.target.value)}
+                  placeholder="Enter your full name"
+                  className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-800">
+                  Email address
+                </span>
+                <input
+                  type="email"
+                  value={donorEmail}
+                  onChange={(event) => setDonorEmail(event.target.value)}
+                  placeholder="you@example.com"
+                  className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-bold text-slate-800">
+                  Amount (NGN)
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="5000"
+                  className="mt-2 h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+                />
+              </label>
+
+              <div>
+                <p className="text-sm font-bold text-slate-800">
+                  Payment method
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+                  {[
+                    { label: "Checkout", value: "checkout" },
+                    { label: "DVA transfer", value: "dva_transfer" },
+                  ].map((method) => (
+                    <button
+                      key={method.value}
+                      type="button"
+                      onClick={() =>
+                        setPaymentMethod(method.value as PaymentMethod)
+                      }
+                      className={`rounded-lg px-3 py-3 text-sm font-bold transition ${
+                        paymentMethod === method.value
+                          ? "bg-white text-teal-800 shadow-sm"
+                          : "text-slate-600 hover:text-teal-800"
+                      }`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isInitializingDonation}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-4 text-sm font-bold text-slate-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                <HeartHandshake className="h-5 w-5" />
+                {isInitializingDonation
+                  ? "Initializing..."
+                  : "Donate to this bill"}
+              </button>
+            </form>
+
+            {donationResponse && (
+              <DonationPaymentResult donation={donationResponse} />
+            )}
+
             <button
               type="button"
               onClick={copyPublicUrl}
@@ -371,10 +534,14 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
             <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
               <div className="h-36 bg-[radial-gradient(circle_at_30%_30%,#14b8a6_0_3px,transparent_4px),linear-gradient(135deg,#e2e8f0,#f8fafc)]" />
               <div className="space-y-3 bg-white p-4">
-                <p className="text-sm font-bold">Verified hospital partner</p>
-                <p className="break-all text-xs font-semibold text-slate-500">
-                  ID: {medicalCase.hospital_id || "Unavailable"}
+                <p className="text-sm font-bold">
+                  {medicalCase.hospital_name || "Verified hospital partner"}
                 </p>
+                {medicalCase.hospital_address && (
+                  <p className="text-sm leading-6 text-slate-600">
+                    {medicalCase.hospital_address}
+                  </p>
+                )}
                 <p className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600">
                   <MapPin className="h-4 w-4" />
                   Case origin verified
@@ -443,6 +610,54 @@ function MoneyMoveStep({
       <h3 className="mt-4 font-bold">{title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
     </article>
+  );
+}
+
+function DonationPaymentResult({
+  donation,
+}: {
+  donation: DonationInitializeResponse;
+}) {
+  const checkoutUrl = toOptionalAbsoluteUrl(donation.checkout);
+  const transferDetails = donation.dva_transfer;
+  const isCheckout = donation.payment_method === "checkout";
+
+  return (
+    <div className="mt-5 rounded-xl border border-teal-100 bg-teal-50 p-4">
+      <p className="text-sm font-bold text-teal-950">
+        Payment initialized
+      </p>
+      <p className="mt-1 text-sm leading-6 text-slate-700">
+        {isCheckout
+          ? "Continue to checkout to complete your donation."
+          : "Use the transfer details below to complete your donation."}
+      </p>
+
+      {isCheckout && checkoutUrl && (
+        <a
+          href={checkoutUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-teal-800 px-4 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
+        >
+          Continue to checkout
+        </a>
+      )}
+
+      {!isCheckout && transferDetails && (
+        <div className="mt-4 rounded-lg border border-teal-100 bg-white p-3">
+          <p className="whitespace-pre-wrap break-words text-sm font-semibold leading-6 text-slate-800">
+            {transferDetails}
+          </p>
+        </div>
+      )}
+
+      {donation.donation_closed && (
+        <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+          Donations are currently closed for this case.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -572,8 +787,10 @@ function parsePublicCase(responseBody: unknown): PublicCase {
     donation_options: getString(body.donation_options),
     donor_count: getNumber(body.donor_count),
     hospital_id: getString(body.hospital_id),
+    hospital_address: getString(body.hospital_address),
+    hospital_name: getString(body.hospital_name),
     id: getString(body.id),
-    patient_declaration: getString(body.patient_declaration),
+    patient_declaration: getPatientStatement(body),
     patient_id: getString(body.patient_id),
     public_link: getString(body.public_link),
     public_slug: getString(body.public_slug),
@@ -584,12 +801,70 @@ function parsePublicCase(responseBody: unknown): PublicCase {
   };
 }
 
+function parseDonationInitializeResponse(
+  responseBody: unknown,
+): DonationInitializeResponse {
+  if (!responseBody || typeof responseBody !== "object") {
+    throw new Error("Invalid donation response.");
+  }
+
+  const body = responseBody as Record<string, unknown>;
+
+  return {
+    checkout: getString(body.checkout),
+    checkout_enabled: getBoolean(body.checkout_enabled),
+    donation_closed: getBoolean(body.donation_closed),
+    dva_enabled: getBoolean(body.dva_enabled),
+    dva_transfer: getString(body.dva_transfer),
+    payment_method: getString(body.payment_method),
+  };
+}
+
 function getString(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+function getPatientStatement(body: Record<string, unknown>) {
+  const directStatement =
+    getString(body.patient_statement) ||
+    getString(body.statement);
+
+  if (directStatement) {
+    return directStatement;
+  }
+
+  const patientDeclaration =
+    body.patient_declaration && typeof body.patient_declaration === "object"
+      ? (body.patient_declaration as Record<string, unknown>)
+      : null;
+  const declaration =
+    body.declaration && typeof body.declaration === "object"
+      ? (body.declaration as Record<string, unknown>)
+      : null;
+
+  if (patientDeclaration) {
+    return getString(patientDeclaration.statement);
+  }
+
+  return declaration
+    ? getString(declaration.statement)
+    : getString(body.patient_declaration);
+}
+
 function getNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : false;
+}
+
+function toOptionalAbsoluteUrl(value: string) {
+  if (!value) {
+    return "";
+  }
+
+  return toAbsolutePublicUrl(value);
 }
 
 async function parseJsonResponse(response: Response) {

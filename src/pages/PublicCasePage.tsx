@@ -478,7 +478,14 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
             </div>
             <div className="mt-3 flex items-center justify-between text-sm font-semibold text-slate-600">
               <span>{fundedPercentage}% funded</span>
-              <span>{donorCount} donor{donorCount === 1 ? "" : "s"}</span>
+              <Link
+                to={`/cases/${encodeURIComponent(
+                  medicalCase.public_slug,
+                )}/donors`}
+                className="font-bold text-teal-800 underline decoration-teal-300 underline-offset-4 hover:text-teal-950"
+              >
+                View {donorCount} donor{donorCount === 1 ? "" : "s"}
+              </Link>
             </div>
 
             <div className="mt-5 rounded-xl bg-teal-50 p-4 text-sm font-semibold text-teal-900">

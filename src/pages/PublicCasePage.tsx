@@ -217,6 +217,7 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
     event.preventDefault();
 
     const amountNumber = Number(amount);
+
     if (!donorName.trim()) {
       toast.error("Please enter your name.");
       return;
@@ -231,6 +232,9 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
       toast.error("Please enter a valid donation amount.");
       return;
     }
+
+    const checkoutWindow =
+      paymentMethod === "checkout" ? window.open("", "_blank") : null;
 
     setIsInitializingDonation(true);
     setDonationResponse(null);
@@ -265,22 +269,29 @@ function PublicCaseContent({ medicalCase }: { medicalCase: PublicCase }) {
         const checkoutUrl = initializedDonation.checkout?.authorization_url;
 
         if (!checkoutUrl) {
+          checkoutWindow?.close();
           throw new Error(
             "Paystack did not return a checkout link. Please try again.",
           );
         }
 
-        sessionStorage.setItem(
-          "korede_pending_paystack_reference",
-          initializedDonation.checkout?.paystack_reference ?? "",
-        );
-        window.location.assign(checkoutUrl);
+        setDonationResponse(initializedDonation);
+
+        if (checkoutWindow) {
+          checkoutWindow.location.assign(checkoutUrl);
+        } else {
+          toast.error(
+            "Your browser blocked the Paystack tab. Use the checkout button below to continue.",
+          );
+        }
+
         return;
       }
 
       setDonationResponse(initializedDonation);
       toast.success("Donation payment initialized.");
     } catch (error) {
+      checkoutWindow?.close();
       toast.error(
         error instanceof Error
           ? error.message

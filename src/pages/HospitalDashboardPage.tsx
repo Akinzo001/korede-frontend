@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   FileClock,
   FileText,
   Filter,
@@ -40,8 +41,10 @@ import { BrandLogo } from "../components/BrandLogo";
 import { API_BASE_URL } from "../config/api";
 import {
   clearHospitalSession,
+  formatNairaFromKobo,
   getHospitalSession,
   type Hospital,
+  type MedicalCase,
 } from "../lib/auth";
 
 const navItems = [
@@ -309,6 +312,8 @@ export function HospitalDashboardPage() {
             />
           ) : activeView === "create-case" ? (
             <CreateMedicalCaseView accessToken={session.access_token} />
+          ) : activeView === "active-cases" ? (
+            <ActiveCasesView accessToken={session.access_token} />
           ) : (
             <OverviewView shortHospitalName={shortHospitalName} />
           )}
@@ -405,6 +410,384 @@ function HospitalSidebar({
       </aside>
     </>
   );
+}
+
+function ActiveCasesView({ accessToken }: { accessToken: string }) {
+  const [cases, setCases] = useState<MedicalCase[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [requestCount, setRequestCount] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadActiveCases() {
+      setIsLoading(true);
+      setError("");
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/hospitals/cases/active`,
+          {
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(data?.message || "Unable to load active cases.");
+        }
+
+        if (isMounted) {
+          setCases(Array.isArray(data?.cases) ? data.cases : []);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load active cases.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadActiveCases();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, requestCount]);
+
+  const totalRaised = cases.reduce(
+    (sum, medicalCase) => sum + medicalCase.amount_raised_kobo,
+    0,
+  );
+  const totalBill = cases.reduce(
+    (sum, medicalCase) => sum + medicalCase.bill_amount_kobo,
+    0,
+  );
+
+  return (
+    <>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
+            <SquareKanban className="h-4 w-4" />
+            Active medical cases
+          </span>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+            Active Cases
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+            Cases currently published or receiving public funding for your
+            hospital.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setRequestCount((count) => count + 1)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-teal-200 hover:text-teal-800"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-3">
+        <ActiveCaseSummaryCard label="Active cases" value={cases.length.toString()} />
+        <ActiveCaseSummaryCard
+          label="Total raised"
+          value={formatNairaFromKobo(totalRaised)}
+        />
+        <ActiveCaseSummaryCard
+          label="Total bill"
+          value={formatNairaFromKobo(totalBill)}
+        />
+      </section>
+
+      <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {isLoading ? (
+          <div className="grid min-h-[280px] place-items-center p-8 text-center">
+            <div>
+              <RefreshCw className="mx-auto h-8 w-8 animate-spin text-teal-800" />
+              <p className="mt-4 font-bold">Loading active cases...</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Fetching the latest hospital case records.
+              </p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="grid min-h-[280px] place-items-center p-8 text-center">
+            <div className="max-w-md">
+              <AlertCircle className="mx-auto h-10 w-10 text-red-600" />
+              <h2 className="mt-4 text-2xl font-bold">Unable to load cases</h2>
+              <p className="mt-2 text-sm text-slate-600">{error}</p>
+              <button
+                type="button"
+                onClick={() => setRequestCount((count) => count + 1)}
+                className="mt-5 rounded-lg bg-teal-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        ) : cases.length === 0 ? (
+          <div className="grid min-h-[280px] place-items-center p-8 text-center">
+            <div className="max-w-md">
+              <FileText className="mx-auto h-10 w-10 text-slate-500" />
+              <h2 className="mt-4 text-2xl font-bold">No active cases yet</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Active medical cases created by your hospital will appear here.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4">Case</th>
+                    <th className="px-5 py-4">Funding</th>
+                    <th className="px-5 py-4">Raised</th>
+                    <th className="px-5 py-4">Bill</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4">Admitted</th>
+                    <th className="px-5 py-4">Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cases.map((medicalCase) => (
+                    <ActiveCaseTableRow
+                      key={medicalCase.id}
+                      medicalCase={medicalCase}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-4 p-4 lg:hidden">
+              {cases.map((medicalCase) => (
+                <ActiveCaseMobileCard
+                  key={medicalCase.id}
+                  medicalCase={medicalCase}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </>
+  );
+}
+
+function ActiveCaseSummaryCard({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-2xl font-bold text-slate-950">
+        {value}
+      </p>
+    </article>
+  );
+}
+
+function ActiveCaseTableRow({ medicalCase }: { medicalCase: MedicalCase }) {
+  const progress = getFundingPercentage(medicalCase);
+
+  return (
+    <tr className="border-b border-slate-100 last:border-b-0">
+      <td className="px-5 py-4 align-top">
+        <div className="max-w-xs">
+          <p className="break-words font-bold">{medicalCase.title}</p>
+          <p className="mt-1 break-all text-xs text-slate-500">
+            ID: {medicalCase.id}
+          </p>
+          {medicalCase.diagnosis_summary && (
+            <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">
+              {medicalCase.diagnosis_summary}
+            </p>
+          )}
+        </div>
+      </td>
+      <td className="px-5 py-4 align-top">
+        <FundingProgress value={progress} />
+      </td>
+      <td className="px-5 py-4 align-top font-bold">
+        {formatNairaFromKobo(medicalCase.amount_raised_kobo)}
+      </td>
+      <td className="px-5 py-4 align-top font-bold">
+        {formatNairaFromKobo(medicalCase.bill_amount_kobo)}
+      </td>
+      <td className="px-5 py-4 align-top">
+        <StatusPill status={medicalCase.status} />
+      </td>
+      <td className="px-5 py-4 align-top text-slate-600">
+        {formatCaseDate(medicalCase.admitted_at)}
+      </td>
+      <td className="px-5 py-4 align-top">
+        <PublicCaseLink medicalCase={medicalCase} />
+      </td>
+    </tr>
+  );
+}
+
+function ActiveCaseMobileCard({ medicalCase }: { medicalCase: MedicalCase }) {
+  const progress = getFundingPercentage(medicalCase);
+
+  return (
+    <article className="rounded-xl border border-slate-200 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="break-words text-lg font-bold">{medicalCase.title}</h2>
+          <p className="mt-1 break-all text-xs text-slate-500">
+            ID: {medicalCase.id}
+          </p>
+        </div>
+        <StatusPill status={medicalCase.status} />
+      </div>
+
+      {medicalCase.diagnosis_summary && (
+        <p className="mt-3 text-sm leading-6 text-slate-600">
+          {medicalCase.diagnosis_summary}
+        </p>
+      )}
+
+      <div className="mt-4">
+        <FundingProgress value={progress} />
+      </div>
+
+      <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Raised
+          </dt>
+          <dd className="mt-1 font-bold">
+            {formatNairaFromKobo(medicalCase.amount_raised_kobo)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Bill
+          </dt>
+          <dd className="mt-1 font-bold">
+            {formatNairaFromKobo(medicalCase.bill_amount_kobo)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Admitted
+          </dt>
+          <dd className="mt-1 text-slate-700">
+            {formatCaseDate(medicalCase.admitted_at)}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Public link
+          </dt>
+          <dd className="mt-1">
+            <PublicCaseLink medicalCase={medicalCase} />
+          </dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function FundingProgress({ value }: { value: number }) {
+  return (
+    <div className="min-w-[140px]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-bold text-teal-800">{value}%</span>
+        <span className="text-xs text-slate-500">funded</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className="h-full rounded-full bg-teal-700"
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-bold capitalize text-teal-800">
+      {status || "active"}
+    </span>
+  );
+}
+
+function PublicCaseLink({ medicalCase }: { medicalCase: MedicalCase }) {
+  const href = medicalCase.public_link || `/cases/${medicalCase.public_slug}`;
+
+  if (!href || href === "/cases/") {
+    return <span className="text-sm text-slate-500">Not available</span>;
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 rounded-lg border border-teal-100 px-3 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-50"
+    >
+      View
+      <ExternalLink className="h-3.5 w-3.5" />
+    </a>
+  );
+}
+
+function getFundingPercentage(medicalCase: MedicalCase) {
+  if (!medicalCase.bill_amount_kobo) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        (medicalCase.amount_raised_kobo / medicalCase.bill_amount_kobo) * 100,
+      ),
+    ),
+  );
+}
+
+function formatCaseDate(value: string | null | undefined) {
+  if (!value) {
+    return "Not set";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Not set";
+  }
+
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+  }).format(date);
 }
 
 function OverviewView({ shortHospitalName }: { shortHospitalName: string }) {

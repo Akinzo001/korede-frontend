@@ -313,7 +313,12 @@ export function HospitalDashboardPage() {
           ) : activeView === "create-case" ? (
             <CreateMedicalCaseView accessToken={session.access_token} />
           ) : activeView === "active-cases" ? (
-            <ActiveCasesView accessToken={session.access_token} />
+            <HospitalCasesView accessToken={session.access_token} type="active" />
+          ) : activeView === "completed-cases" ? (
+            <HospitalCasesView
+              accessToken={session.access_token}
+              type="completed"
+            />
           ) : (
             <OverviewView shortHospitalName={shortHospitalName} />
           )}
@@ -412,22 +417,35 @@ function HospitalSidebar({
   );
 }
 
-function ActiveCasesView({ accessToken }: { accessToken: string }) {
+function HospitalCasesView({
+  accessToken,
+  type,
+}: {
+  accessToken: string;
+  type: "active" | "completed";
+}) {
   const [cases, setCases] = useState<MedicalCase[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [requestCount, setRequestCount] = useState(0);
+  const isCompleted = type === "completed";
+  const endpoint = isCompleted ? "completed" : "active";
+  const title = isCompleted ? "Completed Cases" : "Active Cases";
+  const eyebrow = isCompleted ? "Completed medical cases" : "Active medical cases";
+  const description = isCompleted
+    ? "Cases that have finished their funding or medical support workflow for your hospital."
+    : "Cases currently published or receiving public funding for your hospital.";
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadActiveCases() {
+    async function loadHospitalCases() {
       setIsLoading(true);
       setError("");
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/v1/hospitals/cases/active`,
+          `${API_BASE_URL}/api/v1/hospitals/cases/${endpoint}`,
           {
             headers: {
               Accept: "application/json",
@@ -439,7 +457,7 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
         const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-          throw new Error(data?.message || "Unable to load active cases.");
+          throw new Error(data?.message || `Unable to load ${type} cases.`);
         }
 
         if (isMounted) {
@@ -450,7 +468,7 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Unable to load active cases.",
+              : `Unable to load ${type} cases.`,
           );
         }
       } finally {
@@ -460,12 +478,12 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
       }
     }
 
-    void loadActiveCases();
+    void loadHospitalCases();
 
     return () => {
       isMounted = false;
     };
-  }, [accessToken, requestCount]);
+  }, [accessToken, endpoint, requestCount, type]);
 
   const totalRaised = cases.reduce(
     (sum, medicalCase) => sum + medicalCase.amount_raised_kobo,
@@ -481,15 +499,18 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
-            <SquareKanban className="h-4 w-4" />
-            Active medical cases
+            {isCompleted ? (
+              <CheckCircle2 className="h-4 w-4" />
+            ) : (
+              <SquareKanban className="h-4 w-4" />
+            )}
+            {eyebrow}
           </span>
           <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
-            Active Cases
+            {title}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-            Cases currently published or receiving public funding for your
-            hospital.
+            {description}
           </p>
         </div>
         <button
@@ -503,7 +524,7 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
       </div>
 
       <section className="mt-6 grid gap-4 sm:grid-cols-3">
-        <ActiveCaseSummaryCard label="Active cases" value={cases.length.toString()} />
+        <ActiveCaseSummaryCard label={title} value={cases.length.toString()} />
         <ActiveCaseSummaryCard
           label="Total raised"
           value={formatNairaFromKobo(totalRaised)}
@@ -519,7 +540,7 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
           <div className="grid min-h-[280px] place-items-center p-8 text-center">
             <div>
               <RefreshCw className="mx-auto h-8 w-8 animate-spin text-teal-800" />
-              <p className="mt-4 font-bold">Loading active cases...</p>
+              <p className="mt-4 font-bold">Loading {type} cases...</p>
               <p className="mt-1 text-sm text-slate-500">
                 Fetching the latest hospital case records.
               </p>
@@ -544,9 +565,13 @@ function ActiveCasesView({ accessToken }: { accessToken: string }) {
           <div className="grid min-h-[280px] place-items-center p-8 text-center">
             <div className="max-w-md">
               <FileText className="mx-auto h-10 w-10 text-slate-500" />
-              <h2 className="mt-4 text-2xl font-bold">No active cases yet</h2>
+              <h2 className="mt-4 text-2xl font-bold">
+                No {type} cases yet
+              </h2>
               <p className="mt-2 text-sm text-slate-600">
-                Active medical cases created by your hospital will appear here.
+                {isCompleted
+                  ? "Completed medical cases for your hospital will appear here."
+                  : "Active medical cases created by your hospital will appear here."}
               </p>
             </div>
           </div>

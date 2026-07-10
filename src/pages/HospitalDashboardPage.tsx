@@ -94,6 +94,44 @@ type CaseDocument = {
   original_filename: string;
 };
 
+type SettlementRecord = {
+  account_name: string;
+  account_number: string;
+  amount_kobo: number;
+  bank_code: string;
+  bank_name: string;
+  case_title: string;
+  created_at: string;
+  failed_at: string | null;
+  failure_reason: string | null;
+  id: string;
+  initiated_at: string | null;
+  medical_case_id: string;
+  paid_at: string | null;
+  patient_id: string;
+  patient_name: string;
+  paystack_transfer_code: string;
+  public_link: string;
+  public_slug: string;
+  settlement_reference: string;
+  status: string;
+  updated_at: string;
+};
+
+type SettlementPagination = {
+  limit: number;
+  offset: number;
+  total: number;
+};
+
+type SettlementFilters = {
+  status: string;
+  medicalCaseId: string;
+  from: string;
+  to: string;
+  limit: string;
+};
+
 const metrics = [
   {
     label: "Total Active Cases",
@@ -319,6 +357,8 @@ export function HospitalDashboardPage() {
               accessToken={session.access_token}
               type="completed"
             />
+          ) : activeView === "settlement-history" ? (
+            <SettlementHistoryView accessToken={session.access_token} />
           ) : (
             <OverviewView shortHospitalName={shortHospitalName} />
           )}
@@ -414,6 +454,531 @@ function HospitalSidebar({
         </div>
       </aside>
     </>
+  );
+}
+
+function SettlementHistoryView({ accessToken }: { accessToken: string }) {
+  const [settlements, setSettlements] = useState<SettlementRecord[]>([]);
+  const [pagination, setPagination] = useState<SettlementPagination>({
+    limit: 20,
+    offset: 0,
+    total: 0,
+  });
+  const [filters, setFilters] = useState<SettlementFilters>({
+    status: "",
+    medicalCaseId: "",
+    from: "",
+    to: "",
+    limit: "20",
+  });
+  const [appliedFilters, setAppliedFilters] =
+    useState<SettlementFilters>(filters);
+  const [offset, setOffset] = useState(0);
+  const [requestCount, setRequestCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSettlementHistory() {
+      setIsLoading(true);
+      setError("");
+
+      const params = new URLSearchParams();
+
+      if (appliedFilters.status) {
+        params.set("status", appliedFilters.status);
+      }
+
+      if (appliedFilters.medicalCaseId) {
+        params.set("medical_case_id", appliedFilters.medicalCaseId);
+      }
+
+      if (appliedFilters.from) {
+        params.set("from", appliedFilters.from);
+      }
+
+      if (appliedFilters.to) {
+        params.set("to", appliedFilters.to);
+      }
+
+      params.set("limit", appliedFilters.limit || "20");
+      params.set("offset", String(offset));
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/hospitals/settlements/history?${params.toString()}`,
+          {
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        );
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(
+            data?.message || "Unable to load settlement history.",
+          );
+        }
+
+        if (isMounted) {
+          setSettlements(
+            Array.isArray(data?.settlements) ? data.settlements : [],
+          );
+          setPagination({
+            limit: Number(data?.pagination?.limit) || Number(appliedFilters.limit) || 20,
+            offset: Number(data?.pagination?.offset) || offset,
+            total: Number(data?.pagination?.total) || 0,
+          });
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load settlement history.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadSettlementHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, appliedFilters, offset, requestCount]);
+
+  const totalSettled = settlements.reduce(
+    (sum, settlement) => sum + settlement.amount_kobo,
+    0,
+  );
+  const hasPrevious = pagination.offset > 0;
+  const nextOffset = pagination.offset + pagination.limit;
+  const hasNext = nextOffset < pagination.total;
+
+  function updateFilter(key: keyof SettlementFilters, value: string) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setOffset(0);
+    setAppliedFilters(filters);
+  }
+
+  function clearFilters() {
+    const nextFilters = {
+      status: "",
+      medicalCaseId: "",
+      from: "",
+      to: "",
+      limit: "20",
+    };
+
+    setFilters(nextFilters);
+    setAppliedFilters(nextFilters);
+    setOffset(0);
+  }
+
+  return (
+    <>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
+            <History className="h-4 w-4" />
+            Settlement records
+          </span>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+            Settlement History
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+            Track transfers, payouts, failed settlements, and beneficiary
+            account details across your hospital cases.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setRequestCount((count) => count + 1)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-teal-200 hover:text-teal-800"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+
+      <section className="mt-6 grid gap-4 sm:grid-cols-3">
+        <ActiveCaseSummaryCard
+          label="Displayed settlements"
+          value={settlements.length.toString()}
+        />
+        <ActiveCaseSummaryCard
+          label="Total matching"
+          value={pagination.total.toString()}
+        />
+        <ActiveCaseSummaryCard
+          label="Displayed amount"
+          value={formatNairaFromKobo(totalSettled)}
+        />
+      </section>
+
+      <form
+        onSubmit={applyFilters}
+        className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+      >
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            Status
+            <select
+              value={filters.status}
+              onChange={(event) => updateFilter("status", event.target.value)}
+              className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+            >
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="initiated">Initiated</option>
+              <option value="paid">Paid</option>
+              <option value="failed">Failed</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700 xl:col-span-2">
+            Medical case ID
+            <input
+              value={filters.medicalCaseId}
+              onChange={(event) =>
+                updateFilter("medicalCaseId", event.target.value)
+              }
+              placeholder="medical_case_id"
+              className="h-11 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            From
+            <input
+              type="date"
+              value={filters.from}
+              onChange={(event) => updateFilter("from", event.target.value)}
+              className="h-11 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            To
+            <input
+              type="date"
+              value={filters.to}
+              onChange={(event) => updateFilter("to", event.target.value)}
+              className="h-11 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            Limit
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={filters.limit}
+              onChange={(event) => updateFilter("limit", event.target.value)}
+              className="h-11 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="rounded-lg border border-slate-200 px-5 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+          >
+            Clear
+          </button>
+          <button
+            type="submit"
+            className="rounded-lg bg-teal-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
+          >
+            Apply filters
+          </button>
+        </div>
+      </form>
+
+      <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {isLoading ? (
+          <div className="grid min-h-[280px] place-items-center p-8 text-center">
+            <div>
+              <RefreshCw className="mx-auto h-8 w-8 animate-spin text-teal-800" />
+              <p className="mt-4 font-bold">Loading settlement history...</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Fetching the latest payout records.
+              </p>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="grid min-h-[280px] place-items-center p-8 text-center">
+            <div className="max-w-md">
+              <AlertCircle className="mx-auto h-10 w-10 text-red-600" />
+              <h2 className="mt-4 text-2xl font-bold">
+                Unable to load settlements
+              </h2>
+              <p className="mt-2 text-sm text-slate-600">{error}</p>
+              <button
+                type="button"
+                onClick={() => setRequestCount((count) => count + 1)}
+                className="mt-5 rounded-lg bg-teal-800 px-5 py-3 text-sm font-bold text-white transition hover:bg-teal-900"
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        ) : settlements.length === 0 ? (
+          <div className="grid min-h-[280px] place-items-center p-8 text-center">
+            <div className="max-w-md">
+              <Landmark className="mx-auto h-10 w-10 text-slate-500" />
+              <h2 className="mt-4 text-2xl font-bold">No settlements yet</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Settlement records for your hospital will appear here when
+                payouts are initiated.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="hidden overflow-x-auto xl:block">
+              <table className="w-full min-w-[1120px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-4">Case</th>
+                    <th className="px-5 py-4">Patient</th>
+                    <th className="px-5 py-4">Amount</th>
+                    <th className="px-5 py-4">Status</th>
+                    <th className="px-5 py-4">Bank</th>
+                    <th className="px-5 py-4">Reference</th>
+                    <th className="px-5 py-4">Paid</th>
+                    <th className="px-5 py-4">Link</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {settlements.map((settlement) => (
+                    <SettlementTableRow
+                      key={settlement.id}
+                      settlement={settlement}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid gap-4 p-4 xl:hidden">
+              {settlements.map((settlement) => (
+                <SettlementMobileCard
+                  key={settlement.id}
+                  settlement={settlement}
+                />
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                Showing {pagination.offset + 1}-
+                {Math.min(pagination.offset + settlements.length, pagination.total)}{" "}
+                of {pagination.total}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!hasPrevious}
+                  onClick={() =>
+                    setOffset(Math.max(0, pagination.offset - pagination.limit))
+                  }
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={!hasNext}
+                  onClick={() => setOffset(nextOffset)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+    </>
+  );
+}
+
+function SettlementTableRow({
+  settlement,
+}: {
+  settlement: SettlementRecord;
+}) {
+  return (
+    <tr className="border-b border-slate-100 last:border-b-0">
+      <td className="px-5 py-4 align-top">
+        <div className="max-w-xs">
+          <p className="break-words font-bold">{settlement.case_title}</p>
+          <p className="mt-1 break-all text-xs text-slate-500">
+            ID: {settlement.medical_case_id}
+          </p>
+        </div>
+      </td>
+      <td className="px-5 py-4 align-top">
+        <p className="font-semibold">{settlement.patient_name || "Patient"}</p>
+        <p className="mt-1 break-all text-xs text-slate-500">
+          {settlement.patient_id}
+        </p>
+      </td>
+      <td className="px-5 py-4 align-top font-bold">
+        {formatNairaFromKobo(settlement.amount_kobo)}
+      </td>
+      <td className="px-5 py-4 align-top">
+        <SettlementStatusPill status={settlement.status} />
+        {settlement.failure_reason && (
+          <p className="mt-2 max-w-[180px] text-xs leading-5 text-red-600">
+            {settlement.failure_reason}
+          </p>
+        )}
+      </td>
+      <td className="px-5 py-4 align-top">
+        <p className="font-semibold">{settlement.bank_name || "Bank"}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          {settlement.account_name}
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          {settlement.account_number}
+        </p>
+      </td>
+      <td className="px-5 py-4 align-top">
+        <p className="break-all text-xs font-semibold">
+          {settlement.settlement_reference || "Not available"}
+        </p>
+        {settlement.paystack_transfer_code && (
+          <p className="mt-2 break-all text-xs text-slate-500">
+            {settlement.paystack_transfer_code}
+          </p>
+        )}
+      </td>
+      <td className="px-5 py-4 align-top text-slate-600">
+        {formatCaseDate(settlement.paid_at || settlement.initiated_at)}
+      </td>
+      <td className="px-5 py-4 align-top">
+        <SettlementPublicLink settlement={settlement} />
+      </td>
+    </tr>
+  );
+}
+
+function SettlementMobileCard({
+  settlement,
+}: {
+  settlement: SettlementRecord;
+}) {
+  return (
+    <article className="rounded-xl border border-slate-200 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="break-words text-lg font-bold">
+            {settlement.case_title}
+          </h2>
+          <p className="mt-1 break-all text-xs text-slate-500">
+            {settlement.medical_case_id}
+          </p>
+        </div>
+        <SettlementStatusPill status={settlement.status} />
+      </div>
+
+      <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+        <SettlementDetail label="Patient" value={settlement.patient_name} />
+        <SettlementDetail
+          label="Amount"
+          value={formatNairaFromKobo(settlement.amount_kobo)}
+        />
+        <SettlementDetail label="Bank" value={settlement.bank_name} />
+        <SettlementDetail label="Account name" value={settlement.account_name} />
+        <SettlementDetail
+          label="Account number"
+          value={settlement.account_number}
+        />
+        <SettlementDetail
+          label="Paid"
+          value={formatCaseDate(settlement.paid_at || settlement.initiated_at)}
+        />
+      </dl>
+
+      {settlement.failure_reason && (
+        <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          {settlement.failure_reason}
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <SettlementPublicLink settlement={settlement} />
+        <span className="break-all text-xs text-slate-500">
+          {settlement.settlement_reference}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function SettlementDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words font-semibold">{value || "Not set"}</dd>
+    </div>
+  );
+}
+
+function SettlementStatusPill({ status }: { status: string }) {
+  const normalizedStatus = status?.toLowerCase() || "pending";
+  const statusClass = normalizedStatus.includes("fail")
+    ? "bg-red-50 text-red-700"
+    : normalizedStatus.includes("paid") || normalizedStatus.includes("success")
+      ? "bg-teal-50 text-teal-800"
+      : "bg-amber-50 text-amber-800";
+
+  return (
+    <span
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-bold capitalize ${statusClass}`}
+    >
+      {status || "pending"}
+    </span>
+  );
+}
+
+function SettlementPublicLink({
+  settlement,
+}: {
+  settlement: SettlementRecord;
+}) {
+  const href = settlement.public_link || `/cases/${settlement.public_slug}`;
+
+  if (!href || href === "/cases/") {
+    return <span className="text-sm text-slate-500">Not available</span>;
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 rounded-lg border border-teal-100 px-3 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-50"
+    >
+      View case
+      <ExternalLink className="h-3.5 w-3.5" />
+    </a>
   );
 }
 

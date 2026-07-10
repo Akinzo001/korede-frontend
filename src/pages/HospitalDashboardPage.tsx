@@ -6,12 +6,8 @@ import {
   Building2,
   Calendar,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
-  FileClock,
   FileText,
-  Filter,
   HelpCircle,
   History,
   IdCard,
@@ -26,7 +22,6 @@ import {
   RefreshCw,
   Search,
   Send,
-  ShieldCheck,
   SquareKanban,
   Trash2,
   Upload,
@@ -131,70 +126,6 @@ type SettlementFilters = {
   to: string;
   limit: string;
 };
-
-const metrics = [
-  {
-    label: "Total Active Cases",
-    value: "42",
-    delta: "+12%",
-    icon: Activity,
-    accent: "border-t-teal-300",
-  },
-  {
-    label: "Total Funds Raising",
-    value: "₦12,450,000",
-    delta: "+5%",
-    icon: WalletCards,
-    accent: "border-t-teal-300",
-  },
-  {
-    label: "Total Settled (MTD)",
-    value: "₦4,200,000",
-    icon: Building2,
-    accent: "border-t-cyan-200",
-  },
-  {
-    label: "Pending Verifications",
-    value: "8",
-    delta: "Action Req.",
-    icon: FileClock,
-    accent: "border-t-amber-600",
-  },
-];
-
-const activeCases = [
-  {
-    initials: "OA",
-    name: "Oluwaseun Adebayo",
-    id: "PT-8829",
-    progress: 85,
-    amount: "2.5M / 3.0M",
-    status: "Funding",
-  },
-  {
-    initials: "CN",
-    name: "Chioma Nnaji",
-    id: "PT-9102",
-    progress: 100,
-    amount: "1.2M / 1.2M",
-    status: "Awaiting Settl.",
-  },
-  {
-    initials: "IE",
-    name: "Ibrahim Eze",
-    id: "PT-7741",
-    progress: 40,
-    amount: "800K / 2.0M",
-    status: "Funding",
-  },
-];
-
-const chartPoints = [
-  { label: "Week 1", value: "0" },
-  { label: "Week 2", value: "1.6M" },
-  { label: "Week 3", value: "3.1M" },
-  { label: "Now", value: "4.2M" },
-];
 
 export function HospitalDashboardPage() {
   const navigate = useNavigate();
@@ -360,7 +291,10 @@ export function HospitalDashboardPage() {
           ) : activeView === "settlement-history" ? (
             <SettlementHistoryView accessToken={session.access_token} />
           ) : (
-            <OverviewView shortHospitalName={shortHospitalName} />
+            <OverviewView
+              accessToken={session.access_token}
+              onNavigate={setActiveView}
+            />
           )}
         </main>
       </div>
@@ -1380,57 +1314,528 @@ function formatCaseDate(value: string | null | undefined) {
   }).format(date);
 }
 
-function OverviewView({ shortHospitalName }: { shortHospitalName: string }) {
+function OverviewView({
+  accessToken,
+  onNavigate,
+}: {
+  accessToken: string;
+  onNavigate: (view: HospitalDashboardView) => void;
+}) {
+  const [activeCases, setActiveCases] = useState<MedicalCase[]>([]);
+  const [completedCases, setCompletedCases] = useState<MedicalCase[]>([]);
+  const [settlements, setSettlements] = useState<SettlementRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [requestCount, setRequestCount] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchJson(path: string) {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Unable to load dashboard data.");
+      }
+
+      return data;
+    }
+
+    async function loadOverview() {
+      setIsLoading(true);
+      setError("");
+
+      try {
+        const [activeData, completedData, settlementData] = await Promise.all([
+          fetchJson("/api/v1/hospitals/cases/active"),
+          fetchJson("/api/v1/hospitals/cases/completed"),
+          fetchJson("/api/v1/hospitals/settlements/history?limit=5&offset=0"),
+        ]);
+
+        if (isMounted) {
+          setActiveCases(Array.isArray(activeData?.cases) ? activeData.cases : []);
+          setCompletedCases(
+            Array.isArray(completedData?.cases) ? completedData.cases : [],
+          );
+          setSettlements(
+            Array.isArray(settlementData?.settlements)
+              ? settlementData.settlements
+              : [],
+          );
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Unable to load dashboard data.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadOverview();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [accessToken, requestCount]);
+
+  const activeRaised = activeCases.reduce(
+    (sum, medicalCase) => sum + medicalCase.amount_raised_kobo,
+    0,
+  );
+  const activeBill = activeCases.reduce(
+    (sum, medicalCase) => sum + medicalCase.bill_amount_kobo,
+    0,
+  );
+  const settledAmount = settlements
+    .filter((settlement) => settlement.status?.toLowerCase().includes("paid"))
+    .reduce((sum, settlement) => sum + settlement.amount_kobo, 0);
+  const pendingSettlements = settlements.filter((settlement) => {
+    const status = settlement.status?.toLowerCase() || "";
+    return status.includes("pending") || status.includes("initiated");
+  }).length;
+  const failedSettlements = settlements.filter((settlement) =>
+    settlement.status?.toLowerCase().includes("fail"),
+  ).length;
+  const averageFunding =
+    activeBill > 0 ? Math.round((activeRaised / activeBill) * 100) : 0;
+  const topActiveCases = activeCases.slice(0, 5);
+  const recentSettlements = settlements.slice(0, 5);
+
   return (
     <>
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-          Hospital Dashboard
-        </h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600 sm:text-base">
-          Real-time overview of active fundraising cases and financial
-          settlements.
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <span className="inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
+            <LayoutDashboard className="h-4 w-4" />
+            Live hospital overview
+          </span>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+            Hospital Dashboard
+          </h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
+            A real-time operating view of cases, funding movement, and
+            settlement activity for your hospital.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setRequestCount((count) => count + 1)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-teal-200 hover:text-teal-800"
+        >
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
       </div>
 
+      {error && (
+        <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
       <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map(({ label, value, delta, icon: Icon, accent }) => (
-          <article
-            key={label}
-            className={`rounded-xl border border-slate-200 border-t-4 ${accent} bg-white p-5 shadow-sm`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
-                <Icon className="h-5 w-5" />
-              </span>
-              {delta && (
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-bold ${
-                    delta.includes("Action")
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-teal-50 text-teal-800"
-                  }`}
-                >
-                  {delta}
-                </span>
-              )}
-            </div>
-            <p className="mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">
-              {label}
-            </p>
-            <p className="mt-2 break-words text-3xl font-bold">{value}</p>
-          </article>
-        ))}
+        <OverviewMetricCard
+          icon={Activity}
+          label="Active Cases"
+          value={isLoading ? "..." : activeCases.length.toString()}
+          detail={`${averageFunding}% average funding`}
+        />
+        <OverviewMetricCard
+          icon={WalletCards}
+          label="Funds Raising"
+          value={isLoading ? "..." : formatNairaFromKobo(activeRaised)}
+          detail={`against ${formatNairaFromKobo(activeBill)} in open bills`}
+        />
+        <OverviewMetricCard
+          icon={CheckCircle2}
+          label="Completed Cases"
+          value={isLoading ? "..." : completedCases.length.toString()}
+          detail="closed or completed case records"
+        />
+        <OverviewMetricCard
+          icon={Landmark}
+          label="Settled Amount"
+          value={isLoading ? "..." : formatNairaFromKobo(settledAmount)}
+          detail={`${pendingSettlements} pending settlement${
+            pendingSettlements === 1 ? "" : "s"
+          }`}
+          tone={failedSettlements > 0 ? "alert" : "default"}
+        />
       </section>
 
-      <section className="mt-6 grid gap-5 xl:grid-cols-[1fr_340px]">
-        <ActiveCasesPanel />
+      <section className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <OverviewCasesPreview
+          cases={topActiveCases}
+          isLoading={isLoading}
+          onViewAll={() => onNavigate("active-cases")}
+        />
+
         <aside className="grid gap-5">
-          <FundingVelocityPanel />
-          <TrustLedgerCard hospitalName={shortHospitalName} />
+          <OverviewActionPanel
+            activeCount={activeCases.length}
+            pendingSettlements={pendingSettlements}
+            failedSettlements={failedSettlements}
+            onNavigate={onNavigate}
+          />
+          <OverviewFundingPanel
+            raised={activeRaised}
+            bill={activeBill}
+            averageFunding={averageFunding}
+          />
         </aside>
       </section>
+
+      <OverviewSettlementsPreview
+        settlements={recentSettlements}
+        isLoading={isLoading}
+        onViewAll={() => onNavigate("settlement-history")}
+      />
     </>
+  );
+}
+
+function OverviewMetricCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  tone = "default",
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "default" | "alert";
+}) {
+  return (
+    <article
+      className={`rounded-xl border border-slate-200 border-t-4 bg-white p-5 shadow-sm ${
+        tone === "alert" ? "border-t-amber-500" : "border-t-teal-300"
+      }`}
+    >
+      <span
+        className={`flex h-11 w-11 items-center justify-center rounded-lg ${
+          tone === "alert"
+            ? "bg-amber-50 text-amber-700"
+            : "bg-teal-50 text-teal-800"
+        }`}
+      >
+        <Icon className="h-5 w-5" />
+      </span>
+      <p className="mt-5 text-xs font-bold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-2xl font-bold sm:text-3xl">{value}</p>
+      <p className="mt-2 text-sm leading-5 text-slate-500">{detail}</p>
+    </article>
+  );
+}
+
+function OverviewCasesPreview({
+  cases,
+  isLoading,
+  onViewAll,
+}: {
+  cases: MedicalCase[];
+  isLoading: boolean;
+  onViewAll: () => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Active Cases</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Open funding cases that may need monitoring.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-50 px-4 py-2 text-sm font-bold text-teal-800 transition hover:bg-teal-100"
+        >
+          View all
+          <ExternalLink className="h-4 w-4" />
+        </button>
+      </div>
+
+      {isLoading ? (
+        <OverviewLoadingBlock label="Loading active cases..." />
+      ) : cases.length === 0 ? (
+        <OverviewEmptyBlock
+          icon={FileText}
+          title="No active cases"
+          detail="Newly published medical cases will appear here."
+        />
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {cases.map((medicalCase) => (
+            <article
+              key={medicalCase.id}
+              className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_180px_auto] lg:items-center"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="break-words font-bold">{medicalCase.title}</h3>
+                  <StatusPill status={medicalCase.status} />
+                </div>
+                <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">
+                  {medicalCase.diagnosis_summary || "No summary provided."}
+                </p>
+              </div>
+              <FundingProgress value={getFundingPercentage(medicalCase)} />
+              <div className="text-sm lg:text-right">
+                <p className="font-bold">
+                  {formatNairaFromKobo(medicalCase.amount_raised_kobo)}
+                </p>
+                <p className="text-slate-500">
+                  of {formatNairaFromKobo(medicalCase.bill_amount_kobo)}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OverviewActionPanel({
+  activeCount,
+  pendingSettlements,
+  failedSettlements,
+  onNavigate,
+}: {
+  activeCount: number;
+  pendingSettlements: number;
+  failedSettlements: number;
+  onNavigate: (view: HospitalDashboardView) => void;
+}) {
+  const actions = [
+    {
+      label: "Create medical case",
+      detail: "Start a new verified patient case",
+      icon: PlusSquare,
+      view: "create-case" as HospitalDashboardView,
+      tone: "primary",
+    },
+    {
+      label: "Review active cases",
+      detail: `${activeCount} active case${activeCount === 1 ? "" : "s"}`,
+      icon: SquareKanban,
+      view: "active-cases" as HospitalDashboardView,
+      tone: "neutral",
+    },
+    {
+      label: "Settlement history",
+      detail:
+        failedSettlements > 0
+          ? `${failedSettlements} failed settlement${
+              failedSettlements === 1 ? "" : "s"
+            }`
+          : `${pendingSettlements} pending settlement${
+              pendingSettlements === 1 ? "" : "s"
+            }`,
+      icon: History,
+      view: "settlement-history" as HospitalDashboardView,
+      tone: failedSettlements > 0 ? "alert" : "neutral",
+    },
+  ];
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="text-2xl font-bold">Action Center</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        Fast paths for the work hospitals repeat most.
+      </p>
+      <div className="mt-5 grid gap-3">
+        {actions.map(({ label, detail, icon: Icon, view, tone }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onNavigate(view)}
+            className={`flex items-center gap-3 rounded-lg border px-4 py-4 text-left transition ${
+              tone === "primary"
+                ? "border-teal-700 bg-teal-800 text-white hover:bg-teal-900"
+                : tone === "alert"
+                  ? "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                  : "border-slate-200 bg-white text-slate-800 hover:border-teal-200 hover:bg-teal-50"
+            }`}
+          >
+            <Icon className="h-5 w-5 shrink-0" />
+            <span className="min-w-0">
+              <span className="block font-bold">{label}</span>
+              <span
+                className={`mt-1 block text-xs ${
+                  tone === "primary" ? "text-teal-50" : "text-slate-500"
+                }`}
+              >
+                {detail}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OverviewFundingPanel({
+  raised,
+  bill,
+  averageFunding,
+}: {
+  raised: number;
+  bill: number;
+  averageFunding: number;
+}) {
+  const remaining = Math.max(bill - raised, 0);
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-4">
+        <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-teal-50 text-teal-800">
+          <WalletCards className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="text-2xl font-bold">Funding Snapshot</h2>
+          <p className="text-sm text-slate-600">Across active cases</p>
+        </div>
+      </div>
+      <div className="mt-6">
+        <FundingProgress value={averageFunding} />
+      </div>
+      <dl className="mt-6 grid gap-4 text-sm">
+        <OverviewAmountRow label="Raised" value={formatNairaFromKobo(raised)} />
+        <OverviewAmountRow label="Open bills" value={formatNairaFromKobo(bill)} />
+        <OverviewAmountRow
+          label="Remaining"
+          value={formatNairaFromKobo(remaining)}
+        />
+      </dl>
+    </section>
+  );
+}
+
+function OverviewAmountRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="break-words text-right font-bold">{value}</dd>
+    </div>
+  );
+}
+
+function OverviewSettlementsPreview({
+  settlements,
+  isLoading,
+  onViewAll,
+}: {
+  settlements: SettlementRecord[];
+  isLoading: boolean;
+  onViewAll: () => void;
+}) {
+  return (
+    <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Recent Settlements</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Latest payout movement from your settlement ledger.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-50 px-4 py-2 text-sm font-bold text-teal-800 transition hover:bg-teal-100"
+        >
+          View history
+          <ExternalLink className="h-4 w-4" />
+        </button>
+      </div>
+
+      {isLoading ? (
+        <OverviewLoadingBlock label="Loading settlements..." />
+      ) : settlements.length === 0 ? (
+        <OverviewEmptyBlock
+          icon={Landmark}
+          title="No settlement records"
+          detail="Settlement activity will appear here after payouts begin."
+        />
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {settlements.map((settlement) => (
+            <article
+              key={settlement.id}
+              className="grid gap-3 p-5 md:grid-cols-[minmax(0,1fr)_150px_130px] md:items-center"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="break-words font-bold">
+                    {settlement.case_title || "Medical case"}
+                  </h3>
+                  <SettlementStatusPill status={settlement.status} />
+                </div>
+                <p className="mt-1 text-sm text-slate-600">
+                  {settlement.patient_name || "Patient"} -{" "}
+                  {settlement.bank_name || "Bank"}
+                </p>
+              </div>
+              <p className="font-bold">
+                {formatNairaFromKobo(settlement.amount_kobo)}
+              </p>
+              <p className="text-sm text-slate-500 md:text-right">
+                {formatCaseDate(settlement.paid_at || settlement.initiated_at)}
+              </p>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OverviewLoadingBlock({ label }: { label: string }) {
+  return (
+    <div className="grid min-h-[220px] place-items-center p-8 text-center">
+      <div>
+        <RefreshCw className="mx-auto h-8 w-8 animate-spin text-teal-800" />
+        <p className="mt-4 font-bold">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+function OverviewEmptyBlock({
+  icon: Icon,
+  title,
+  detail,
+}: {
+  icon: typeof FileText;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="grid min-h-[220px] place-items-center p-8 text-center">
+      <div className="max-w-sm">
+        <Icon className="mx-auto h-10 w-10 text-slate-500" />
+        <h3 className="mt-4 text-xl font-bold">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
+      </div>
+    </div>
   );
 }
 
@@ -2229,185 +2634,4 @@ function getDocumentType(file: File) {
   return extension || "document";
 }
 
-function ActiveCasesPanel() {
-  return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-100 p-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Active Cases</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Patients currently receiving public funding.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-50 px-4 py-2 text-sm font-bold text-teal-800"
-        >
-          <Filter className="h-4 w-4" />
-          Filter
-        </button>
-      </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-[720px] w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 text-xs font-bold uppercase tracking-wide text-slate-500">
-              <th className="px-5 py-4">Patient & ID</th>
-              <th className="px-5 py-4">Funding Progress</th>
-              <th className="px-5 py-4">Amount (₦)</th>
-              <th className="px-5 py-4">Status</th>
-              <th className="px-5 py-4">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeCases.map((medicalCase) => (
-              <tr key={medicalCase.id} className="border-b border-slate-100">
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-cyan-50 text-xs font-bold text-cyan-700">
-                      {medicalCase.initials}
-                    </span>
-                    <div>
-                      <p className="font-bold">{medicalCase.name}</p>
-                      <p className="text-xs text-slate-500">ID: {medicalCase.id}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-3">
-                    <span className="w-10 text-xs font-bold text-teal-800">
-                      {medicalCase.progress}%
-                    </span>
-                    <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className={`h-full rounded-full ${
-                          medicalCase.progress === 100
-                            ? "bg-amber-700"
-                            : "bg-teal-700"
-                        }`}
-                        style={{ width: `${medicalCase.progress}%` }}
-                      />
-                    </div>
-                  </div>
-                </td>
-                <td className="px-5 py-4 font-bold">{medicalCase.amount}</td>
-                <td className="px-5 py-4">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-bold ${
-                      medicalCase.status.includes("Awaiting")
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-teal-50 text-teal-800"
-                    }`}
-                  >
-                    {medicalCase.status}
-                  </span>
-                </td>
-                <td className="px-5 py-4">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-teal-100 px-4 py-2 text-xs font-bold text-teal-800 transition hover:bg-teal-50"
-                  >
-                    View
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="flex items-center justify-between px-5 py-4 text-xs text-slate-500">
-        <span>Showing 1-3 of 42 cases</span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            aria-label="Previous page"
-            className="rounded-lg border border-slate-200 p-2 text-slate-500"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            aria-label="Next page"
-            className="rounded-lg border border-slate-200 p-2 text-slate-500"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FundingVelocityPanel() {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-2xl font-bold">Funding Velocity</h2>
-      <p className="mt-1 text-sm text-slate-600">
-        Donation trends across active cases (30d)
-      </p>
-
-      <div className="mt-6 rounded-xl bg-slate-50 p-4">
-        <div className="flex h-52 flex-col justify-end">
-          <div className="relative h-40 border-b border-l border-slate-200">
-            <svg
-              viewBox="0 0 280 150"
-              className="absolute inset-0 h-full w-full"
-              preserveAspectRatio="none"
-            >
-              <defs>
-                <linearGradient id="velocityFill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#0f766e" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#0f766e" stopOpacity="0.02" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M0 135 C 45 120, 60 88, 95 82 C 130 74, 155 42, 185 36 C 220 28, 245 52, 280 58 L280 150 L0 150 Z"
-                fill="url(#velocityFill)"
-              />
-              <path
-                d="M0 135 C 45 120, 60 88, 95 82 C 130 74, 155 42, 185 36 C 220 28, 245 52, 280 58"
-                fill="none"
-                stroke="#0f766e"
-                strokeWidth="2"
-              />
-              <circle cx="95" cy="82" r="4" fill="#ecfeff" stroke="#0f766e" strokeWidth="2" />
-              <circle cx="185" cy="36" r="4" fill="#ecfeff" stroke="#0f766e" strokeWidth="2" />
-            </svg>
-            <span className="absolute right-4 top-4 rounded bg-slate-800 px-2 py-1 text-xs font-bold text-white">
-              Peak: ₦4.2M
-            </span>
-          </div>
-          <div className="mt-3 grid grid-cols-4 text-center text-xs font-medium text-slate-500">
-            {chartPoints.map((point) => (
-              <span key={point.label}>{point.label}</span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function TrustLedgerCard({ hospitalName }: { hospitalName: string }) {
-  return (
-    <section className="rounded-xl bg-teal-800 p-6 text-white shadow-sm">
-      <div className="flex items-center gap-4">
-        <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/10">
-          <ShieldCheck className="h-6 w-6" />
-        </span>
-        <h2 className="text-2xl font-bold">Trust Ledger</h2>
-      </div>
-      <p className="mt-5 text-sm leading-6 text-teal-50">
-        All funds settled to {hospitalName} are recorded immutably. Next
-        settlement batch processing in progress.
-      </p>
-      <button
-        type="button"
-        className="mt-6 w-full rounded-lg bg-white px-4 py-3 text-sm font-bold text-teal-800 transition hover:bg-teal-50"
-      >
-        View ledger
-      </button>
-    </section>
-  );
-}

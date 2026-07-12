@@ -85,7 +85,7 @@ type BillingItemForm = {
 type CaseDocument = {
   content_base64: string;
   document_type: string;
-  name: string;
+  mime_type: string;
   original_filename: string;
 };
 
@@ -1993,12 +1993,12 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
     const preparedBillingItems = billingItems
       .map((item) => ({
         description: item.description.trim(),
-        amount_kobo: Math.round(Number(item.amount) * 100),
+        amount: Number(item.amount),
       }))
-      .filter((item) => item.description && item.amount_kobo > 0);
+      .filter((item) => item.description && item.amount > 0);
 
-    if (!title.trim() || !diagnosisSummary.trim() || !admittedAt) {
-      toast.error("Complete the case title, diagnosis summary, and admission date.");
+    if (!title.trim() || !diagnosisSummary.trim()) {
+      toast.error("Complete the case title and diagnosis summary.");
       return;
     }
 
@@ -2017,7 +2017,7 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          admitted_at: new Date(admittedAt).toISOString(),
+          admitted_at: admittedAt ? new Date(admittedAt).toISOString() : null,
           billing_items: preparedBillingItems,
           diagnosis_summary: diagnosisSummary.trim(),
           documents,
@@ -2028,7 +2028,11 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(data?.message || "Unable to create medical case.");
+        throw new Error(
+          data?.message ||
+            data?.detail ||
+            "Unable to create medical case. Check the case payload.",
+        );
       }
 
       toast.success("Medical case created successfully.");
@@ -2196,7 +2200,7 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
 
               <label className="block">
                 <span className="text-sm font-bold text-slate-800">
-                  Admission date
+                  Admission date (optional)
                 </span>
                 <div className="relative mt-2">
                   <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -2602,8 +2606,8 @@ function readDocumentFile(file: File) {
 
       resolve({
         content_base64: contentBase64,
-        document_type: getDocumentType(file),
-        name: file.name.replace(/\.[^/.]+$/, "") || file.name,
+        document_type: "medical_report",
+        mime_type: file.type || "application/octet-stream",
         original_filename: file.name,
       });
     };
@@ -2614,24 +2618,6 @@ function readDocumentFile(file: File) {
 
     reader.readAsDataURL(file);
   });
-}
-
-function getDocumentType(file: File) {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-
-  if (file.type.includes("pdf") || extension === "pdf") {
-    return "pdf";
-  }
-
-  if (file.type.includes("image") || ["jpg", "jpeg", "png"].includes(extension || "")) {
-    return "image";
-  }
-
-  if (["doc", "docx"].includes(extension || "")) {
-    return "document";
-  }
-
-  return extension || "document";
 }
 
 

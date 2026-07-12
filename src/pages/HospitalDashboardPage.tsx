@@ -1993,7 +1993,7 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
     const preparedBillingItems = billingItems
       .map((item) => ({
         description: item.description.trim(),
-        amount: Number(item.amount),
+        amount: Math.round(Number(item.amount)),
       }))
       .filter((item) => item.description && item.amount > 0);
 
@@ -2007,12 +2007,18 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
       return;
     }
 
+    if (!documents.length) {
+      toast.error("Upload at least one case document.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/v1/hospitals/cases`, {
         method: "POST",
         headers: {
+          Accept: "application/json",
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
@@ -2025,14 +2031,11 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
           title: title.trim(),
         }),
       });
-      const data = await response.json().catch(() => null);
+      const responseText = await response.text();
+      const data = parseApiResponse(responseText);
 
       if (!response.ok) {
-        throw new Error(
-          data?.message ||
-            data?.detail ||
-            "Unable to create medical case. Check the case payload.",
-        );
+        throw new Error(formatApiError(data, responseText));
       }
 
       toast.success("Medical case created successfully.");
@@ -2259,8 +2262,8 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
                     />
                     <input
                       type="number"
-                      min="0"
-                      step="0.01"
+                      min="1"
+                      step="1"
                       value={item.amount}
                       onChange={(event) =>
                         updateBillingItem(index, "amount", event.target.value)
@@ -2594,6 +2597,79 @@ function formatDate(value?: string) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function parseApiResponse(responseText: string) {
+  if (!responseText) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function formatApiError(data: unknown, responseText: string) {
+  if (data && typeof data === "object") {
+    const body = data as {
+      detail?: unknown;
+      error?: unknown;
+      errors?: unknown;
+      message?: unknown;
+    };
+
+    const primaryMessage = stringifyApiErrorValue(body.message);
+    const detailMessage = stringifyApiErrorValue(body.detail);
+    const errorsMessage = stringifyApiErrorValue(body.errors);
+    const errorMessage = stringifyApiErrorValue(body.error);
+
+    return (
+      primaryMessage ||
+      detailMessage ||
+      errorsMessage ||
+      errorMessage ||
+      "Unable to create medical case."
+    );
+  }
+
+  return responseText || "Unable to create medical case.";
+}
+
+function stringifyApiErrorValue(value: unknown): string {
+  if (!value) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stringifyApiErrorValue(item))
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (typeof value === "object") {
+    const record = value as { loc?: unknown; msg?: unknown; message?: unknown };
+    const location = Array.isArray(record.loc) ? record.loc.join(".") : "";
+    const message = stringifyApiErrorValue(record.msg || record.message);
+
+    if (location && message) {
+      return `${location}: ${message}`;
+    }
+
+    if (message) {
+      return message;
+    }
+
+    return JSON.stringify(value);
+  }
+
+  return String(value);
 }
 
 function readDocumentFile(file: File) {

@@ -2023,7 +2023,7 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          admitted_at: admittedAt ? new Date(admittedAt).toISOString() : null,
+          admitted_at: admittedAt || null,
           billing_items: preparedBillingItems,
           diagnosis_summary: diagnosisSummary.trim(),
           documents,
@@ -2208,7 +2208,7 @@ function CreateMedicalCaseView({ accessToken }: { accessToken: string }) {
                 <div className="relative mt-2">
                   <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="datetime-local"
+                    type="date"
                     value={admittedAt}
                     onChange={(event) => setAdmittedAt(event.target.value)}
                     className="h-12 w-full rounded-lg border border-slate-200 pl-10 pr-4 text-sm outline-none transition focus:border-teal-700 focus:ring-4 focus:ring-teal-700/10"
